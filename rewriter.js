@@ -856,11 +856,9 @@
     text = text.replace(/\.{3,}/g, '...');
     text = text.replace(/\.\.(?!\.)/g, '.');
     text = text.replace(/\s+,/g, ',');
+    text = text.replace(/ \./g, '.');
     text = text.replace(/,+/g, ',');
     text = text.replace(/,\s*,+/g, ', ');
-    text = text.replace(/ \./g, '.');
-    text = text.replace(/ ,/g, ',');
-    text = text.replace(/,,+/g, ',');
     text = text.replace(/!{2,}/g, '!');
     text = text.replace(/\?{2,}/g, '?');
     // Capitalize after sentence-ending punctuation
