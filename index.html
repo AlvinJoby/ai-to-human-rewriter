@@ -8,15 +8,29 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #f5f5f7;
-  --card: #ffffff;
-  --border: #d1d5db;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --text: #1f2937;
-  --muted: #6b7280;
-  --success: #059669;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --bg: #0f1117;
+  --bg-subtle: #161922;
+  --card: #1c1f2e;
+  --card-header: #1a1d2b;
+  --border: #2a2d3e;
+  --border-focus: #4f6ef7;
+  --primary: #4f6ef7;
+  --primary-hover: #3b5bdb;
+  --primary-glow: rgba(79, 110, 247, 0.25);
+  --text: #e1e4ed;
+  --text-secondary: #9399b2;
+  --muted: #6c7293;
+  --success: #34d399;
+  --success-hover: #10b981;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(248, 113, 113, 0.25);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius: 10px;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --transition: 0.2s ease;
 }
 
 body {
@@ -25,149 +39,335 @@ body {
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
-  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
+/* Header */
 header {
-  background: var(--card);
+  background: var(--bg-subtle);
   border-bottom: 1px solid var(--border);
-  padding: 1.25rem 2rem;
+  padding: 1.5rem 2rem;
   text-align: center;
 }
 
 header h1 {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: var(--text);
+  letter-spacing: -0.02em;
 }
+
+header h1 span { color: var(--primary); }
 
 header p {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 0.875rem;
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
 }
 
+/* Container */
 .container {
-  max-width: 1200px;
-  margin: 1.5rem auto;
-  padding: 0 1.5rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  flex: 1;
+  width: 100%;
 }
 
-.controls {
+/* Controls */
+.toolbar {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.6rem 1.4rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  padding: 0.55rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  background: var(--card);
+  color: var(--text-secondary);
+  transition: all var(--transition);
+  white-space: nowrap;
 }
 
-.btn:active { transform: scale(0.97); }
-
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-}
-
-.btn-primary:hover { background: var(--primary-hover); }
-
-.btn-secondary {
-  background: #e5e7eb;
+.btn:hover {
+  border-color: var(--text-secondary);
   color: var(--text);
 }
 
-.btn-secondary:hover { background: #d1d5db; }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--border); color: var(--text-secondary); }
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 16px var(--primary-glow);
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: #fff;
+}
+
+.btn-primary:disabled:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
 
 .btn-success {
+  background: transparent;
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.btn-success:hover {
   background: var(--success);
   color: #fff;
 }
 
-.btn-success:hover { background: #047857; }
+.btn-success:disabled:hover {
+  background: transparent;
+  border-color: var(--success);
+  color: var(--success);
+}
 
+.btn-kbd {
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.06);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  margin-left: 0.15rem;
+  font-weight: 500;
+}
+
+/* Select */
+.select-wrap {
+  position: relative;
+}
+
+.select-wrap select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.55rem 2.2rem 0.55rem 0.9rem;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.select-wrap select:hover { border-color: var(--text-secondary); }
+.select-wrap select:focus { outline: none; border-color: var(--primary); }
+
+.select-wrap::after {
+  content: '▾';
+  position: absolute;
+  right: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  font-size: 0.75rem;
+}
+
+/* Slider */
+.slider-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 160px;
+}
+
+.slider-wrap label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.slider-track {
+  width: 100%;
+  position: relative;
+}
+
+.slider-track input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 8px var(--primary-glow);
+  cursor: pointer;
+  transition: transform var(--transition);
+}
+
+.slider-track input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.slider-track input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 8px var(--primary-glow);
+  cursor: pointer;
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.slider-labels span {
+  transition: color var(--transition);
+}
+
+.slider-labels span.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* Panels */
 .panels {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-}
-
-@media (max-width: 768px) {
-  .panels { grid-template-columns: 1fr; }
-  .container { padding: 0 1rem; }
+  gap: 1rem;
 }
 
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: border-color var(--transition);
 }
+
+.panel:focus-within { border-color: var(--border-focus); }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: #fafafa;
+  background: var(--card-header);
+  min-height: 2.5rem;
 }
 
 .panel-header h2 {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--muted);
+  letter-spacing: 0.6px;
+  color: var(--text-secondary);
 }
 
 .badge {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 12px;
-  background: #e5e7eb;
+  font-size: 0.68rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.06);
   color: var(--muted);
   font-weight: 600;
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
-.badge.detected { background: #dbeafe; color: #1e40af; }
+.badge:empty { display: none; }
+
+.badge-info { background: rgba(79, 110, 247, 0.15); color: #8da4f7; }
+.badge-success { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+.badge-warning { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
+.badge-danger { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.badge-info .badge-dot { background: #8da4f7; }
+.badge-success .badge-dot { background: var(--success); }
+.badge-warning .badge-dot { background: var(--warning); }
+.badge-danger .badge-dot { background: var(--danger); }
 
 textarea {
   width: 100%;
-  min-height: 320px;
+  min-height: 340px;
   padding: 1rem;
   border: none;
   resize: vertical;
   font-family: var(--font);
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: 0.92rem;
+  line-height: 1.75;
   color: var(--text);
+  background: transparent;
   outline: none;
 }
 
-textarea::placeholder { color: #9ca3af; }
+textarea::placeholder { color: var(--muted); }
 
 .output-area {
   width: 100%;
-  min-height: 320px;
+  min-height: 340px;
   padding: 1rem;
   font-family: var(--font);
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: 0.92rem;
+  line-height: 1.75;
   white-space: pre-wrap;
   word-wrap: break-word;
   color: var(--text);
@@ -175,71 +375,168 @@ textarea::placeholder { color: #9ca3af; }
 }
 
 .output-area.empty {
-  color: #9ca3af;
+  color: var(--muted);
   font-style: italic;
 }
 
-.stats {
-  display: flex;
-  gap: 1.5rem;
-  justify-content: center;
-  margin-top: 1rem;
-  flex-wrap: wrap;
+.output-area mark {
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--danger);
+  border-radius: 3px;
+  padding: 0.05em 0.2em;
 }
 
-.stat {
+/* Stats bar */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+
+.stats-bar.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.5rem;
   text-align: center;
 }
 
 .stat-value {
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--primary);
+  line-height: 1.3;
 }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
+  margin-top: 0.15rem;
 }
 
+/* Toast */
 .toast {
   position: fixed;
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: #1f2937;
-  color: #fff;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  padding: 0.65rem 1.3rem;
+  border-radius: var(--radius);
   font-size: 0.85rem;
-  transition: transform 0.3s ease;
-  z-index: 100;
+  font-weight: 500;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
 
+/* Footer */
 footer {
   text-align: center;
-  padding: 2rem 1rem;
+  padding: 1.5rem 1rem;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+footer span { color: var(--success); }
+
+/* Error banner */
+.error-banner {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  display: none;
+}
+
+.error-banner.visible { display: block; }
+
+/* Responsive */
+@media (max-width: 860px) {
+  .panels { grid-template-columns: 1fr; }
+  .stats-bar { grid-template-columns: repeat(3, 1fr); }
+  header { padding: 1.25rem 1rem; }
+  .container { padding: 1rem; }
+}
+
+@media (max-width: 480px) {
+  .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  .toolbar { gap: 0.5rem; }
+  header h1 { font-size: 1.3rem; }
 }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>✨ AI-to-Human Text Rewriter</h1>
-  <p>Transform AI-generated content into natural, human-like writing — 100% offline</p>
+  <h1><span>✦</span> AI-to-Human Text Rewriter</h1>
+  <p>Transform AI-generated content into natural, human-sounding writing</p>
 </header>
 
 <div class="container">
-  <div class="controls">
-    <button class="btn btn-primary" id="rewriteBtn" onclick="doRewrite()">↻ Rewrite</button>
-    <button class="btn btn-success" id="copyBtn" onclick="copyOutput()" disabled>📋 Copy Output</button>
-    <button class="btn btn-secondary" onclick="clearAll()">✕ Clear</button>
+  <div id="errorBanner" class="error-banner" role="alert">
+    ⚠ Could not load <strong>rewriter.js</strong>. Make sure it is in the same directory as this page.
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-group">
+      <button class="btn btn-primary" id="rewriteBtn">↻ Rewrite<span class="btn-kbd">Ctrl ↵</span></button>
+      <button class="btn btn-success" id="copyBtn" disabled>✎ Copy</button>
+      <button class="btn" id="clearBtn">✕ Clear</button>
+    </div>
+
+    <div class="toolbar-group">
+      <div class="select-wrap">
+        <select id="contextSelect" aria-label="Context">
+          <option value="auto">Auto-detect</option>
+          <option value="email">Email</option>
+          <option value="technical">Technical</option>
+          <option value="casual">Casual</option>
+          <option value="professional">Professional</option>
+        </select>
+      </div>
+
+      <div class="slider-wrap">
+        <label for="levelSlider">Difficulty</label>
+        <div class="slider-track">
+          <input type="range" id="levelSlider" min="0" max="2" step="1" value="1" aria-label="Rewrite level">
+        </div>
+        <div class="slider-labels">
+          <span id="labelLight">Light</span>
+          <span id="labelMedium" class="active">Medium</span>
+          <span id="labelAggressive">Aggressive</span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="panels">
@@ -248,7 +545,7 @@ footer {
         <h2>Input — AI Text</h2>
         <span class="badge" id="toneBadge"></span>
       </div>
-      <textarea id="input" placeholder="Paste your AI-generated text here…"></textarea>
+      <textarea id="input" placeholder="Paste your AI-generated text here…&#10;&#10;Press Ctrl+Enter to rewrite."></textarea>
     </div>
 
     <div class="panel">
@@ -260,22 +557,30 @@ footer {
     </div>
   </div>
 
-  <div class="stats" id="statsRow" style="display:none;">
-    <div class="stat">
-      <div class="stat-value" id="statWords">0</div>
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card">
+      <div class="stat-value" id="statWords">—</div>
       <div class="stat-label">Words</div>
     </div>
-    <div class="stat">
-      <div class="stat-value" id="statSentences">0</div>
+    <div class="stat-card">
+      <div class="stat-value" id="statSentences">—</div>
       <div class="stat-label">Sentences</div>
     </div>
-    <div class="stat">
-      <div class="stat-value" id="statTone">—</div>
-      <div class="stat-label">Detected Tone</div>
+    <div class="stat-card">
+      <div class="stat-value" id="statPatterns">—</div>
+      <div class="stat-label">AI Patterns Found</div>
     </div>
-    <div class="stat">
-      <div class="stat-value" id="statScore">0</div>
+    <div class="stat-card">
+      <div class="stat-value" id="statScore">—</div>
       <div class="stat-label">AI Score</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statContext">—</div>
+      <div class="stat-label">Detected Context</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statChanged">—</div>
+      <div class="stat-label">Words Changed</div>
     </div>
   </div>
 </div>
@@ -283,7 +588,7 @@ footer {
 <div class="toast" id="toast"></div>
 
 <footer>
-  AI-to-Human Rewriter &bull; Runs entirely in your browser &bull; No data leaves your device
+  <span>●</span> Runs entirely in your browser &bull; No data leaves your device
 </footer>
 
 <script src="rewriter.js"></script>
@@ -291,21 +596,89 @@ footer {
 (function () {
   'use strict';
 
-  var inputEl = document.getElementById('input');
-  var outputEl = document.getElementById('output');
-  var copyBtn = document.getElementById('copyBtn');
-  var toneBadge = document.getElementById('toneBadge');
-  var scoreBadge = document.getElementById('scoreBadge');
-  var statsRow = document.getElementById('statsRow');
+  /* ── DOM refs ───────────────────────────────────────── */
+  var inputEl       = document.getElementById('input');
+  var outputEl      = document.getElementById('output');
+  var rewriteBtn    = document.getElementById('rewriteBtn');
+  var copyBtn       = document.getElementById('copyBtn');
+  var clearBtn      = document.getElementById('clearBtn');
+  var contextSelect = document.getElementById('contextSelect');
+  var levelSlider   = document.getElementById('levelSlider');
+  var toneBadge     = document.getElementById('toneBadge');
+  var scoreBadge    = document.getElementById('scoreBadge');
+  var statsBar      = document.getElementById('statsBar');
+  var errorBanner   = document.getElementById('errorBanner');
 
+  var sliderLabels = [
+    document.getElementById('labelLight'),
+    document.getElementById('labelMedium'),
+    document.getElementById('labelAggressive')
+  ];
+  var levelNames = ['light', 'medium', 'aggressive'];
+
+  /* ── Rewriter availability check ────────────────────── */
   if (typeof Rewriter === 'undefined') {
-    outputEl.textContent = 'Error: Could not load rewriter.js. Make sure it is in the same folder as index.html.';
-    outputEl.style.color = '#dc2626';
-    document.getElementById('rewriteBtn').disabled = true;
+    errorBanner.classList.add('visible');
+    rewriteBtn.disabled = true;
     return;
   }
 
-  window.doRewrite = function () {
+  /* ── Toast system ───────────────────────────────────── */
+  var toastTimer;
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2200);
+  }
+
+  /* ── Helpers ────────────────────────────────────────── */
+  function countWords(str) {
+    var m = str.match(/\S+/g);
+    return m ? m.length : 0;
+  }
+
+  function countSentences(str) {
+    return str.split(/[.!?]+/).filter(function (s) { return s.trim().length > 0; }).length;
+  }
+
+  function ucFirst(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+  function getLevel() { return levelNames[parseInt(levelSlider.value, 10)] || 'medium'; }
+
+  function getContext() { return contextSelect.value; }
+
+  function setBadge(el, text, variant) {
+    el.innerHTML = '<span class="badge-dot"></span>' + text;
+    el.className = 'badge badge-' + variant;
+  }
+
+  function scoreVariant(score) {
+    if (score < Rewriter.SCORE_THRESHOLD_HUMAN) return 'success';
+    if (score < Rewriter.SCORE_THRESHOLD_AI) return 'warning';
+    return 'danger';
+  }
+
+  function scoreLabel(score) {
+    if (score < Rewriter.SCORE_THRESHOLD_HUMAN) return 'Likely human';
+    if (score < Rewriter.SCORE_THRESHOLD_AI) return 'Moderate';
+    return 'Likely AI';
+  }
+
+  /* ── Slider labels ──────────────────────────────────── */
+  function updateSliderLabels() {
+    var idx = parseInt(levelSlider.value, 10);
+    for (var i = 0; i < sliderLabels.length; i++) {
+      sliderLabels[i].classList.toggle('active', i === idx);
+    }
+  }
+
+  levelSlider.addEventListener('input', updateSliderLabels);
+  updateSliderLabels();
+
+  /* ── Rewrite ────────────────────────────────────────── */
+  function doRewrite() {
     var text = inputEl.value.trim();
     if (!text) {
       showToast('Please enter some text first.');
@@ -314,44 +687,59 @@ footer {
 
     var tone = Rewriter.detectTone(text);
     var aiScore = Rewriter.scoreAIness(text);
-    var result = Rewriter.rewrite(text);
+    var patternCount = Rewriter.countAIPatterns(text);
+    var result = Rewriter.rewrite(text, {
+      context: getContext(),
+      level: getLevel()
+    });
 
+    // Output
     outputEl.textContent = result;
     outputEl.classList.remove('empty');
     copyBtn.disabled = false;
 
-    toneBadge.textContent = tone.charAt(0).toUpperCase() + tone.slice(1);
-    toneBadge.classList.add('detected');
+    // Input badge — tone + pattern count
+    var toneText = ucFirst(tone);
+    if (patternCount > 0) {
+      toneText += ' · ' + patternCount + ' pattern' + (patternCount === 1 ? '' : 's');
+    }
+    setBadge(toneBadge, toneText, patternCount > 3 ? 'danger' : patternCount > 0 ? 'warning' : 'info');
 
-    var scoreLabel = aiScore < Rewriter.SCORE_THRESHOLD_HUMAN ? 'Likely human' :
-                    aiScore < Rewriter.SCORE_THRESHOLD_AI ? 'Moderate AI' : 'Likely AI';
-    scoreBadge.textContent = 'AI Score: ' + aiScore + ' — ' + scoreLabel;
-    scoreBadge.classList.add('detected');
+    // Output badge — AI score
+    var variant = scoreVariant(aiScore);
+    setBadge(scoreBadge, 'Score ' + aiScore + ' — ' + scoreLabel(aiScore), variant);
 
-    var words = result.split(/\s+/).filter(function (w) { return w.length > 0; }).length;
-    var sentences = result.split(/[.!?]+/).filter(function (s) { return s.trim().length > 0; }).length;
+    // Stats
+    var outWords = countWords(result);
+    var inWords = countWords(text);
+    var wordDiff = Math.abs(outWords - inWords);
+    var pctChanged = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
 
-    document.getElementById('statWords').textContent = words;
-    document.getElementById('statSentences').textContent = sentences;
-    document.getElementById('statTone').textContent = tone.charAt(0).toUpperCase() + tone.slice(1);
+    document.getElementById('statWords').textContent = outWords;
+    document.getElementById('statSentences').textContent = countSentences(result);
+    document.getElementById('statPatterns').textContent = patternCount;
     document.getElementById('statScore').textContent = aiScore;
-    statsRow.style.display = 'flex';
-  };
+    document.getElementById('statContext').textContent = ucFirst(tone);
+    document.getElementById('statChanged').textContent = '~' + pctChanged + '%';
 
-  window.copyOutput = function () {
+    statsBar.classList.add('visible');
+  }
+
+  /* ── Copy ────────────────────────────────────────────── */
+  function copyOutput() {
     var text = outputEl.textContent;
     if (!text || outputEl.classList.contains('empty')) return;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () {
-        showToast('Copied to clipboard!');
+        showToast('✓ Copied to clipboard');
       }).catch(function () {
         fallbackCopy(text);
       });
     } else {
       fallbackCopy(text);
     }
-  };
+  }
 
   function fallbackCopy(text) {
     var ta = document.createElement('textarea');
@@ -362,39 +750,36 @@ footer {
     ta.select();
     try {
       document.execCommand('copy');
-      showToast('Copied to clipboard!');
+      showToast('✓ Copied to clipboard');
     } catch (e) {
       showToast('Copy failed — please select and copy manually.');
     }
     document.body.removeChild(ta);
   }
 
-  window.clearAll = function () {
+  /* ── Clear ───────────────────────────────────────────── */
+  function clearAll() {
     inputEl.value = '';
     outputEl.textContent = 'Rewritten text will appear here…';
     outputEl.classList.add('empty');
     copyBtn.disabled = true;
     toneBadge.textContent = '';
-    toneBadge.classList.remove('detected');
+    toneBadge.className = 'badge';
     scoreBadge.textContent = '';
-    scoreBadge.classList.remove('detected');
-    statsRow.style.display = 'none';
-  };
-
-  var toastTimer;
-  function showToast(msg) {
-    var el = document.getElementById('toast');
-    el.textContent = msg;
-    el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2000);
+    scoreBadge.className = 'badge';
+    statsBar.classList.remove('visible');
+    inputEl.focus();
   }
 
-  // Allow Ctrl+Enter to trigger rewrite
+  /* ── Event bindings ──────────────────────────────────── */
+  rewriteBtn.addEventListener('click', doRewrite);
+  copyBtn.addEventListener('click', copyOutput);
+  clearBtn.addEventListener('click', clearAll);
+
   inputEl.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      window.doRewrite();
+      doRewrite();
     }
   });
 })();
