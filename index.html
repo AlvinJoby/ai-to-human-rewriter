@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-to-Human Text Rewriter</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f5f7;
+  --card: #ffffff;
+  --border: #d1d5db;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --success: #059669;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  padding: 0;
+}
+
+header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 1.25rem 2rem;
+  text-align: center;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+header p {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 1.5rem auto;
+  padding: 0 1.5rem;
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.4rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover { background: var(--primary-hover); }
+
+.btn-secondary {
+  background: #e5e7eb;
+  color: var(--text);
+}
+
+.btn-secondary:hover { background: #d1d5db; }
+
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-success:hover { background: #047857; }
+
+.panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .panels { grid-template-columns: 1fr; }
+  .container { padding: 0 1rem; }
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+}
+
+.panel-header h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+.badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  background: #e5e7eb;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.badge.detected { background: #dbeafe; color: #1e40af; }
+
+textarea {
+  width: 100%;
+  min-height: 320px;
+  padding: 1rem;
+  border: none;
+  resize: vertical;
+  font-family: var(--font);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text);
+  outline: none;
+}
+
+textarea::placeholder { color: #9ca3af; }
+
+.output-area {
+  width: 100%;
+  min-height: 320px;
+  padding: 1rem;
+  font-family: var(--font);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text);
+  overflow-y: auto;
+}
+
+.output-area.empty {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.stats {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: #1f2937;
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  transition: transform 0.3s ease;
+  z-index: 100;
+}
+
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+footer {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✨ AI-to-Human Text Rewriter</h1>
+  <p>Transform AI-generated content into natural, human-like writing — 100% offline</p>
+</header>
+
+<div class="container">
+  <div class="controls">
+    <button class="btn btn-primary" id="rewriteBtn" onclick="doRewrite()">↻ Rewrite</button>
+    <button class="btn btn-success" id="copyBtn" onclick="copyOutput()" disabled>📋 Copy Output</button>
+    <button class="btn btn-secondary" onclick="clearAll()">✕ Clear</button>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Input — AI Text</h2>
+        <span class="badge" id="toneBadge"></span>
+      </div>
+      <textarea id="input" placeholder="Paste your AI-generated text here…"></textarea>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Output — Human Text</h2>
+        <span class="badge" id="scoreBadge"></span>
+      </div>
+      <div class="output-area empty" id="output">Rewritten text will appear here…</div>
+    </div>
+  </div>
+
+  <div class="stats" id="statsRow" style="display:none;">
+    <div class="stat">
+      <div class="stat-value" id="statWords">0</div>
+      <div class="stat-label">Words</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="statSentences">0</div>
+      <div class="stat-label">Sentences</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="statTone">—</div>
+      <div class="stat-label">Detected Tone</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="statScore">0</div>
+      <div class="stat-label">AI Score</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  AI-to-Human Rewriter &bull; Runs entirely in your browser &bull; No data leaves your device
+</footer>
+
+<script src="rewriter.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var inputEl = document.getElementById('input');
+  var outputEl = document.getElementById('output');
+  var copyBtn = document.getElementById('copyBtn');
+  var toneBadge = document.getElementById('toneBadge');
+  var scoreBadge = document.getElementById('scoreBadge');
+  var statsRow = document.getElementById('statsRow');
+
+  window.doRewrite = function () {
+    var text = inputEl.value.trim();
+    if (!text) {
+      showToast('Please enter some text first.');
+      return;
+    }
+
+    var tone = Rewriter.detectTone(text);
+    var aiScore = Rewriter.scoreAIness(text);
+    var result = Rewriter.rewrite(text);
+
+    outputEl.textContent = result;
+    outputEl.classList.remove('empty');
+    copyBtn.disabled = false;
+
+    toneBadge.textContent = tone.charAt(0).toUpperCase() + tone.slice(1);
+    toneBadge.classList.add('detected');
+
+    var scoreLabel = aiScore < 5 ? 'Likely human' : aiScore < 15 ? 'Moderate AI' : 'Likely AI';
+    scoreBadge.textContent = 'AI Score: ' + aiScore + ' — ' + scoreLabel;
+    scoreBadge.classList.add('detected');
+
+    var words = result.split(/\s+/).filter(function (w) { return w.length > 0; }).length;
+    var sentences = result.split(/[.!?]+/).filter(function (s) { return s.trim().length > 0; }).length;
+
+    document.getElementById('statWords').textContent = words;
+    document.getElementById('statSentences').textContent = sentences;
+    document.getElementById('statTone').textContent = tone.charAt(0).toUpperCase() + tone.slice(1);
+    document.getElementById('statScore').textContent = aiScore;
+    statsRow.style.display = 'flex';
+  };
+
+  window.copyOutput = function () {
+    var text = outputEl.textContent;
+    if (!text || outputEl.classList.contains('empty')) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showToast('Copied to clipboard!');
+      }).catch(function () {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      showToast('Copied to clipboard!');
+    } catch (e) {
+      showToast('Copy failed — please select and copy manually.');
+    }
+    document.body.removeChild(ta);
+  }
+
+  window.clearAll = function () {
+    inputEl.value = '';
+    outputEl.textContent = 'Rewritten text will appear here…';
+    outputEl.classList.add('empty');
+    copyBtn.disabled = true;
+    toneBadge.textContent = '';
+    toneBadge.classList.remove('detected');
+    scoreBadge.textContent = '';
+    scoreBadge.classList.remove('detected');
+    statsRow.style.display = 'none';
+  };
+
+  var toastTimer;
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2000);
+  }
+
+  // Allow Ctrl+Enter to trigger rewrite
+  inputEl.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      window.doRewrite();
+    }
+  });
+})();
+</script>
+</body>
+</html>
