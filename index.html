@@ -717,7 +717,7 @@ footer span { color: var(--success); }
     var outWords = countWords(result);
     var inWords = countWords(text);
     var wordDiff = Math.abs(outWords - inWords);
-    var wordCountDiffPct = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
+    var wordCountShiftPercent = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
     var scoreDelta = aiScore - outScore;
     var scoreDeltaLabel = scoreDelta > 0 ? ('+' + scoreDelta + ' pts') :
       (scoreDelta < 0 ? (scoreDelta + ' pts') : 'No change');
@@ -727,7 +727,7 @@ footer span { color: var(--success); }
     document.getElementById('statPatterns').textContent = patternCount + '/' + outPatternCount;
     document.getElementById('statScore').textContent = aiScore + '/' + outScore;
     document.getElementById('statContext').textContent = ucFirst(outTone);
-    document.getElementById('statChanged').textContent = scoreDeltaLabel + ' (' + wordCountDiffPct + '% text shift)';
+    document.getElementById('statChanged').textContent = scoreDeltaLabel + ' (' + wordCountShiftPercent + '% word count shift)';
 
     statsBar.classList.add('visible');
   }
