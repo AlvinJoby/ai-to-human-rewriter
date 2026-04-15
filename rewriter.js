@@ -788,7 +788,7 @@
       }
 
       // Personal touches -- not in technical writing, not on casual/short
-      if (gap >= 3 && ctx !== 'technical' && !alreadyCasual && !tooShort && chance(personalRate) && /^[A-Z]/.test(s)) {
+      if (gap >= 3 && !alreadyCasual && !tooShort && chance(personalRate) && /^[A-Z]/.test(s)) {
         s = pick(touches) + lcFirst(s);
         lastInjection = i;
       }
@@ -858,7 +858,6 @@
     text = text.replace(/\s+,/g, ',');
     text = text.replace(/ \./g, '.');
     text = text.replace(/,+/g, ',');
-    text = text.replace(/,\s*,+/g, ', ');
     text = text.replace(/!{2,}/g, '!');
     text = text.replace(/\?{2,}/g, '?');
     // Capitalize after sentence-ending punctuation
