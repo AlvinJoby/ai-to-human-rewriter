@@ -804,7 +804,7 @@
     if (ctx === 'technical') {
       text = text.replace(/\bprior to deployment\b/gi, 'before we push this live');
       text = text.replace(/\bprior to (?:the )?release\b/gi, 'before release');
-      text = text.replace(/\bthoroughly tested\b/gi, function () { return pick(['well-tested', 'properly tested']); });
+      text = text.replace(/\bthoroughly tested\b/gi, function () { return pick(['well-tested', 'solidly tested']); });
       text = text.replace(/\bproperly documented\b/gi, function () { return pick(['well-documented', 'documented properly']); });
     }
     if (ctx === 'professional') {
