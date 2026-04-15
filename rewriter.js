@@ -1,703 +1,934 @@
 /**
- * AI-to-Human Text Rewriter
- * Transforms AI-generated content into natural, human-like writing.
- * Zero dependencies. Works in Node.js and browsers.
+ * AI-to-Human Text Rewriter — v2.0
+ *
+ * A dramatically aggressive, multi-stage text transformation engine that
+ * converts AI-generated content into natural, human-sounding prose.
+ *
+ * Pure ES5, zero dependencies. Works in Node.js (CommonJS) and browsers
+ * (exposes global `Rewriter`).
  */
-(function (root) {
+(function (root, factory) {
+  'use strict';
+  var mod = factory();
+  if (typeof module === 'object' && module.exports) {
+    module.exports = mod;
+  } else {
+    root.Rewriter = mod;
+  }
+})(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // ── Scoring thresholds ────────────────────────────────────────────────
+  /* ===================================================================
+   *  CONSTANTS
+   * =================================================================*/
 
-  var SCORE_THRESHOLD_HUMAN = 5;    // Below this = likely human-written
-  var SCORE_THRESHOLD_AI = 15;      // Above this = likely AI-generated
+  var SCORE_THRESHOLD_HUMAN = 5;
+  var SCORE_THRESHOLD_AI    = 15;
 
-  // AI-ness scoring parameters
-  var UNIFORM_VARIANCE_THRESHOLD = 4;     // Sentence-length variance below this → AI signal
-  var UNIFORM_VARIANCE_PENALTY = 5;       // Score penalty for uniform sentence length
-  var LONG_PARAGRAPH_WORDS = 80;          // Word count above this → AI signal
-  var LONG_PARAGRAPH_PENALTY = 3;         // Score penalty per long paragraph
+  /* ===================================================================
+   *  HELPERS
+   * =================================================================*/
 
-  // ── Utility helpers ──────────────────────────────────────────────────
-
-  function pick(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-
-  function chance(pct) {
-    return Math.random() * 100 < pct;
-  }
-
-  var ABBREVIATIONS = [
-    'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'ave', 'blvd',
-    'dept', 'est', 'fig', 'govt', 'inc', 'corp', 'ltd', 'vs', 'vol',
-    'etc', 'approx', 'appt', 'assn', 'gen', 'gov', 'hon', 'sgt',
-    'e\\.g', 'i\\.e', 'no', 'ph\\.d', 'u\\.s', 'u\\.k'
-  ];
-  var ABBREV_REGEX = new RegExp(
-    '(?:^|\\s)(?:' + ABBREVIATIONS.join('|') + ')\\.$', 'i'
-  );
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function chance(p) { return Math.random() < p; }
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function ucFirst(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function lcFirst(s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
+  function wc(t) { var m = t.match(/\S+/g); return m ? m.length : 0; }
 
   function splitSentences(text) {
-    var parts = [];
-    var current = '';
+    var out = [];
+    var buf = '';
     for (var i = 0; i < text.length; i++) {
-      current += text[i];
-      if ((text[i] === '.' || text[i] === '!' || text[i] === '?') &&
-          (i + 1 >= text.length || /\s/.test(text[i + 1])) &&
-          current.trim().length > 1) {
-        // Avoid splitting on common abbreviations
-        if (text[i] === '.' && ABBREV_REGEX.test(current.trim())) {
-          continue;
+      buf += text[i];
+      if (/[.!?]/.test(text[i])) {
+        var next = text[i + 1] || '';
+        if (next === '' || /\s/.test(next)) {
+          var lastWord = buf.replace(/[.!?]+$/, '').split(/\s/).pop() || '';
+          if (lastWord.length > 2 || next === '' || /[A-Z]/.test(text[i + 2] || '')) {
+            out.push(buf.trim());
+            buf = '';
+            while (i + 1 < text.length && /\s/.test(text[i + 1]) && text[i + 1] !== '\n') i++;
+          }
         }
-        parts.push(current.trim());
-        current = '';
       }
     }
-    if (current.trim().length > 0) {
-      parts.push(current.trim());
-    }
-    return parts;
+    if (buf.trim()) out.push(buf.trim());
+    return out.filter(function (s) { return s.length > 0; });
   }
 
-  function splitParagraphs(text) {
-    return text.split(/\n\s*\n/).filter(function (p) { return p.trim().length > 0; });
-  }
+  /* ===================================================================
+   *  PATTERN LIBRARY — 100+ patterns
+   * =================================================================*/
 
-  function joinParagraphs(paragraphs) {
-    return paragraphs.join('\n\n');
-  }
-
-  // ── Dictionaries ─────────────────────────────────────────────────────
-
-  var AI_TRANSITIONS = [
-    'furthermore', 'moreover', 'additionally', 'in addition',
-    'consequently', 'nevertheless', 'nonetheless', 'subsequently',
-    'henceforth', 'thus', 'hence', 'in conclusion', 'to summarize',
-    'in summary', 'it is important to note', 'it is worth noting',
-    'it should be noted', 'it is noteworthy', 'as a result',
-    'in light of this', 'with that being said', 'that being said',
-    'on the other hand', 'in contrast', 'conversely',
-    'as previously mentioned', 'as stated above', 'as discussed',
-    'in this regard', 'with respect to', 'pertaining to',
-    'in the context of', 'it is evident that', 'it is clear that',
-    'it goes without saying', 'needless to say', 'undoubtedly',
-    'without a doubt', 'it is crucial to', 'it is essential to',
-    'it is imperative to', 'it is vital to'
+  // ------------------------------------------------------------------
+  //  1. Formal greeting / closing phrase replacements
+  // ------------------------------------------------------------------
+  var GREETING_PHRASES = [
+    [/I hope this (?:message|email) finds you(?: well| in good (?:health|spirits|form))?[.,;:!\s]*/gi,
+      ['Hey! ', 'Hi there! ', 'Hey — ']],
+    [/I trust this (?:message|email|letter) finds you (?:well|in good health)[.,;!\s]*/gi,
+      ['Hey! ', 'Hi! ', 'Hope you\'re doing well! ']],
+    [/Dear Sir(?:\s*(?:\/|or)\s*Madam)?[.,;!\s]*/gi, ['Hi, ', 'Hello, ', 'Hey, ']],
+    [/Dear (?:Mr|Mrs|Ms|Dr|Prof)\.?\s+\w+[.,;!\s]*/gi, ['Hi, ', 'Hey, ']],
+    [/Greetings[.,;!\s]*/gi, ['Hey! ', 'Hi! ']],
+    [/Good (?:morning|afternoon|evening)[.,;!\s]*/gi, ['Hey! ', 'Hi! ']],
+    [/To whom it may concern[.,;!\s]*/gi, ['Hi there, ', 'Hey, ']],
+    [/I am writing to inform you(?: that)?\s*/gi, ['Just wanted to let you know — ', 'Heads up: ', 'So — ']],
+    [/I am writing to (?:express|convey|communicate)\s*/gi, ['I wanted to share ', 'Just wanted to say ']],
+    [/I am writing in (?:response|reply|regard) to\s*/gi, ['About ', 'Regarding ']],
+    [/Please be advised(?: that)?\s*/gi, ['Just so you know, ', 'Heads up — ']],
+    [/I would like to (?:take this opportunity to )?bring to your attention(?: that)?\s*/gi,
+      ['Just wanted to flag — ', 'Quick heads-up: ']],
+    [/As per (?:our|your|the) (?:previous |earlier |last )?(?:conversation|discussion|email|message)[.,;!\s]*\s*/gi,
+      ['Like we talked about, ', 'Going back to our chat, ', 'Following up on that — ']],
+    [/Please do not hesitate to\s*/gi, ['Feel free to ', 'Just ']],
+    [/At your earliest convenience/gi, ['when you get a chance', 'whenever works for you']],
+    [/Please find (?:attached|enclosed)\s*/gi, ['I\'ve attached ', 'Here\'s ', 'Attached is ']],
+    [/I look forward to hearing from you[.,;!\s]*/gi,
+      ['Let me know what you think!', 'Talk soon!', 'Shoot me a reply when you can.']],
+    [/I look forward to (?:your|our|the) (?:response|reply|feedback|cooperation)[.,;!\s]*/gi,
+      ['Let me know!', 'Looking forward to it!']],
+    [/Thank you for your (?:consideration|time|attention|patience)[.,;!\s]*/gi,
+      ['Thanks!', 'Appreciate it!', 'Cheers!']],
+    [/Thank you (?:very much|kindly|so much|in advance)[.,;!\s]*/gi, ['Thanks!', 'Thanks a lot!']],
+    [/(?:Best|Kind|Warm) regards[.,;!\s]*/gi, ['Cheers,', 'Thanks,', 'Talk soon,']],
+    [/Sincerely(?:\s+yours)?[.,;!\s]*/gi, ['Thanks,', 'Cheers,']],
+    [/Respectfully(?:\s+yours)?[.,;!\s]*/gi, ['Thanks,', 'Cheers,']],
+    [/With (?:kind|warm|best) (?:regards|wishes)[.,;!\s]*/gi, ['Thanks,', 'Cheers,']],
+    [/Yours (?:truly|faithfully|sincerely)[.,;!\s]*/gi, ['Thanks,', 'Cheers,']],
   ];
 
-  var HUMAN_TRANSITIONS = [
-    'also', 'plus', 'and', 'but', 'so', 'anyway',
-    'thing is', 'look', 'well', 'right', 'okay so',
-    'on top of that', 'besides', 'still', 'though',
-    'the thing is', 'honestly', 'actually', 'basically'
+  // ------------------------------------------------------------------
+  //  2. Formal structure / summary phrases
+  // ------------------------------------------------------------------
+  var STRUCTURE_PHRASES = [
+    [/To summarize[.,;]?\s*/gi, ['So basically, ', 'Long story short, ', 'Bottom line — ']],
+    [/In summary[.,;]?\s*/gi, ['So basically, ', 'TL;DR — ']],
+    [/In conclusion[.,;]?\s*/gi, ['So yeah, ', 'All in all, ', 'At the end of the day, ']],
+    [/To conclude[.,;]?\s*/gi, ['Wrapping up — ', 'So yeah, ']],
+    [/In closing[.,;]?\s*/gi, ['So, ', 'Anyway, ']],
+    [/It is imperative(?: that)?\s*/gi, ['We really need to make sure ', 'It\'s critical that ']],
+    [/It is crucial(?: that)?\s*/gi, ['It\'s really important that ', 'We gotta make sure ']],
+    [/It is essential(?: that)?\s*/gi, ['We need to ', 'The key thing is ']],
+    [/It is vital(?: that)?\s*/gi, ['It\'s super important that ', 'We need to ']],
+    [/It is necessary(?: that| to| for)?\s*/gi, ['We need to ', 'You gotta ']],
+    [/It is important to note(?: that)?\s*/gi, ['Worth mentioning — ', 'One thing to keep in mind: ']],
+    [/It is worth noting(?: that)?\s*/gi, ['Good to know — ', 'Also — ']],
+    [/It is worth mentioning(?: that)?\s*/gi, ['Also worth saying — ', 'Side note: ']],
+    [/It should be noted(?: that)?\s*/gi, ['Just a note — ', 'Keep in mind, ']],
+    [/It must be (?:noted|emphasized|stressed)(?: that)?\s*/gi, ['Big thing here — ', 'Key point: ']],
+    [/It is evident(?: that)?\s*/gi, ['Clearly, ', 'Obviously, ']],
+    [/It is clear(?: that)?\s*/gi, ['Obviously, ', 'It\'s pretty clear ']],
+    [/It is apparent(?: that)?\s*/gi, ['Looks like ', 'You can see that ']],
+    [/It goes without saying(?: that)?\s*/gi, ['Obviously, ', 'Look, ']],
+    [/Needless to say[.,;]?\s*/gi, ['Obviously, ', 'I mean, ']],
+    [/It is widely (?:acknowledged|recognized|known)(?: that)?\s*/gi,
+      ['Everyone knows ', 'It\'s pretty well known that ']],
+    [/It is (?:generally|commonly) (?:accepted|believed|understood)(?: that)?\s*/gi,
+      ['Most people agree ', 'The general take is ']],
+    [/(?:The fact of the matter is|The reality is)(?: that)?\s*/gi,
+      ['Truth is, ', 'The thing is, ', 'Honestly, ']],
+    [/(?:It is|It has become) increasingly (?:clear|apparent|evident|obvious)(?: that)?\s*/gi,
+      ['More and more, it\'s clear that ', 'It\'s getting obvious that ']],
+    [/In today'?s (?:fast[- ]paced|rapidly (?:changing|evolving)|modern|digital) (?:world|landscape|environment|era)[.,;]?\s*/gi,
+      ['These days, ', 'Right now, ', 'With everything changing so fast, ']],
+    [/In (?:this|the) (?:day and age|modern era|current landscape)[.,;]?\s*/gi,
+      ['Nowadays, ', 'These days, ']],
   ];
 
-  var CONVERSATIONAL_STARTERS = [
-    'honestly, ', 'basically, ', 'look, ', 'to be fair, ',
-    'truth is, ', 'I mean, ', 'so yeah, ', 'the thing is, ',
-    'actually, ', 'really though, ', 'funny enough, ',
-    'interestingly, ', 'point is, ', 'long story short, ',
-    'bottom line, '
+  // ------------------------------------------------------------------
+  //  3. Passive voice phrases
+  // ------------------------------------------------------------------
+  var PASSIVE_PHRASES = [
+    [/It can be observed(?: that)?\s*/gi, ['You can see ', 'Looks like ']],
+    [/It has been determined(?: that)?\s*/gi, ['Turns out ', 'We found that ']],
+    [/It was (?:found|discovered)(?: that)?\s*/gi, ['We found that ', 'Turns out ']],
+    [/It is recommended(?: that)?\s*/gi, ['I\'d suggest ', 'You should probably ']],
+    [/It has been shown(?: that)?\s*/gi, ['Research shows ', 'We know that ']],
+    [/It has been (?:demonstrated|proven)(?: that)?\s*/gi, ['It turns out ', 'Studies show ']],
+    [/It (?:should|must|ought to) be (?:mentioned|pointed out|emphasized)(?: that)?\s*/gi,
+      ['Worth pointing out — ', 'Gotta say — ']],
+    [/It is (?:anticipated|expected)(?: that)?\s*/gi, ['We\'re expecting ', 'Looks like ']],
+    [/It is (?:believed|thought)(?: that)?\s*/gi, ['People think ', 'The idea is ']],
+    [/It (?:has been|was) (?:reported|noted|observed)(?: that)?\s*/gi,
+      ['From what we\'ve seen, ', 'Reports say ']],
+    [/(?:has|have) been (?:identified|recognized) as\b/gi, ['turns out to be', 'is basically']],
   ];
 
-  var AI_FILLER_PHRASES = [
-    /\bin order to\b/gi,
-    /\butiliz(?:e|ing|ed|es|ation)\b/gi,
-    /\bleverag(?:e|ing|ed|es)\b/gi,
-    /\bfacilitat(?:e|ing|ed|es|ion)\b/gi,
-    /\bimplement(?:ing|ed|s|ation)?\b/gi,
-    /\boptimiz(?:e|ing|ed|es|ation)\b/gi,
-    /\bstreamlin(?:e|ing|ed|es)\b/gi,
-    /\bseamless(?:ly)?\b/gi,
-    /\brobust\b/gi,
-    /\bcomprehensive\b/gi,
-    /\bensur(?:e|ing|ed|es)\b/gi,
-    /\bdelv(?:e|ing|ed|es)\b/gi,
-    /\bembark(?:ing|ed|s)?\b/gi,
-    /\btapestry\b/gi,
-    /\bholistic(?:ally)?\b/gi,
-    /\bsynerg(?:y|ize|istic|ies)\b/gi,
-    /\bparadigm(?:s)?\b/gi,
-    /\bpivotal\b/gi,
-    /\binnovative\b/gi,
-    /\bcutting[- ]edge\b/gi,
-    /\bstate[- ]of[- ]the[- ]art\b/gi,
-    /\bgame[- ]chang(?:er|ing)\b/gi,
-    /\bgroundbreaking\b/gi,
-    /\brevolution(?:ary|ize|izing)\b/gi,
-    /\bunparalleled\b/gi,
-    /\bmeticulous(?:ly)?\b/gi,
-    /\bplethora\b/gi,
-    /\bmyriad\b/gi
+  // ------------------------------------------------------------------
+  //  4. Overly polite / formal
+  // ------------------------------------------------------------------
+  var POLITE_PHRASES = [
+    [/\bKindly\b/gi, 'Please'],
+    [/I trust(?: that)?\s+/gi, ['I think ', 'I believe ']],
+    [/I (?:would like to|wish to|want to) (?:express|convey) my\s*/gi, ['I want to share my ']],
+    [/I (?:would like to|wish to) take a moment to\s*/gi, ['I want to ']],
+    [/I (?:would like to|wish to) (?:emphasize|highlight|underscore)(?: that)?\s*/gi,
+      ['I want to stress that ', 'Big thing here: ']],
+    [/I (?:would like to|wish to) (?:reiterate|restate)(?: that)?\s*/gi,
+      ['Again, ', 'Just to repeat — ']],
+    [/allow me to\s*/gi, ['let me ']],
+    [/permit me to\s*/gi, ['let me ']],
+    [/I would be (?:grateful|thankful|appreciative) if\s*/gi, ['I\'d really appreciate it if ']],
+    [/(?:your |the )?(?:esteemed|valued|respected) (?:organization|institution|company|team)/gi,
+      ['your team', 'your company', 'you all']],
+    [/I (?:am pleased|am happy|am delighted) to (?:inform|announce|share)(?: that)?\s*/gi,
+      ['Great news — ', 'So, good news: ']],
+    [/We are pleased to (?:inform|announce|share)(?: that)?\s*/gi,
+      ['Good news — ', 'Happy to share: ']],
+    [/Please (?:accept my|accept our) (?:sincere |heartfelt )?(?:apologies|gratitude)\s*/gi,
+      ['Sorry about that ', 'Really appreciate it ']],
   ];
 
-  var AI_FILLER_REPLACEMENTS = {
-    'in order to': 'to',
-    'utilize': 'use',
-    'utilizing': 'using',
-    'utilized': 'used',
-    'utilizes': 'uses',
-    'utilization': 'use',
-    'leverage': 'use',
-    'leveraging': 'using',
-    'leveraged': 'used',
-    'leverages': 'uses',
-    'facilitate': 'help with',
-    'facilitating': 'helping with',
-    'facilitated': 'helped with',
-    'facilitates': 'helps with',
-    'facilitation': 'help',
-    'implement': 'set up',
-    'implementing': 'setting up',
-    'implemented': 'set up',
-    'implements': 'sets up',
-    'implementation': 'setup',
-    'optimize': 'improve',
-    'optimizing': 'improving',
-    'optimized': 'improved',
-    'optimizes': 'improves',
-    'optimization': 'improvement',
-    'streamline': 'simplify',
-    'streamlining': 'simplifying',
-    'streamlined': 'simplified',
-    'streamlines': 'simplifies',
-    'seamlessly': 'smoothly',
-    'seamless': 'smooth',
-    'robust': 'solid',
-    'comprehensive': 'thorough',
-    'ensure': 'make sure',
-    'ensuring': 'making sure',
-    'ensured': 'made sure',
-    'ensures': 'makes sure',
-    'delve': 'dig',
-    'delving': 'digging',
-    'delved': 'dug',
-    'delves': 'digs',
-    'embark': 'start',
-    'embarking': 'starting',
-    'embarked': 'started',
-    'embarks': 'starts',
-    'tapestry': 'mix',
-    'holistic': 'overall',
-    'holistically': 'overall',
-    'synergy': 'teamwork',
-    'synergies': 'combined strengths',
-    'synergize': 'work together',
-    'synergistic': 'combined',
-    'paradigm': 'approach',
-    'paradigms': 'approaches',
-    'pivotal': 'key',
-    'innovative': 'new',
-    'cutting-edge': 'modern',
-    'cutting edge': 'modern',
-    'state-of-the-art': 'latest',
-    'state of the art': 'latest',
-    'game-changer': 'big deal',
-    'game changer': 'big deal',
-    'game-changing': 'major',
-    'game changing': 'major',
-    'groundbreaking': 'exciting',
-    'revolutionary': 'new',
-    'revolutionize': 'transform',
-    'revolutionizing': 'transforming',
-    'unparalleled': 'unmatched',
-    'meticulously': 'carefully',
-    'meticulous': 'careful',
-    'plethora': 'bunch',
-    'myriad': 'lots of'
+  // ------------------------------------------------------------------
+  //  5. Transition patterns
+  // ------------------------------------------------------------------
+  var TRANSITION_PATTERNS = [
+    [/\bFurthermore[.,;]?\s*/gi, ['Also, ', 'Plus, ', 'And ']],
+    [/\bMoreover[.,;]?\s*/gi, ['Also, ', 'On top of that, ', 'Plus, ']],
+    [/\bAdditionally[.,;]?\s*/gi, ['Also, ', 'And, ', 'Plus, ']],
+    [/\bNevertheless[.,;]?\s*/gi, ['Still, ', 'But, ', 'Even so, ']],
+    [/\bNonetheless[.,;]?\s*/gi, ['Still, ', 'But, ', 'Even so, ']],
+    [/\bConversely[.,;]?\s*/gi, ['On the flip side, ', 'But then again, ']],
+    [/\bConsequently[.,;]?\s*/gi, ['So, ', 'Because of that, ']],
+    [/\bSubsequently[.,;]?\s*/gi, ['Then, ', 'After that, ']],
+    [/\bHenceforth[.,;]?\s*/gi, ['From now on, ', 'Going forward, ']],
+    [/\bIn addition[.,;]?\s*/gi, ['Also, ', 'Plus, ']],
+    [/\bOn the other hand[.,;]?\s*/gi, ['But, ', 'Then again, ']],
+    [/\bIn contrast[.,;]?\s*/gi, ['But, ', 'On the flip side, ']],
+    [/\bAs a result[.,;]?\s*/gi, ['So, ', 'Because of that, ']],
+    [/\bIn light of (?:this|that|these)[.,;]?\s*/gi, ['Given that, ', 'So, ']],
+    [/\bWith that (?:being |having been )?said[.,;]?\s*/gi, ['That said, ', 'Anyway, ']],
+    [/\bIn summary[.,;]?\s*/gi, ['So basically, ', 'TL;DR: ']],
+    [/\bIn essence[.,;]?\s*/gi, ['Basically, ', 'At its core, ']],
+    [/\bSpecifically[.,;]?\s*/gi, ['Like, ', 'For example, ']],
+    [/\bNotably[.,;]?\s*/gi, ['Especially, ', 'Worth noting — ']],
+    [/\bUltimately[.,;]?\s*/gi, ['At the end of the day, ', 'In the end, ']],
+    [/\bAccordingly[.,;]?\s*/gi, ['So, ', 'Because of that, ']],
+    [/\bThus[.,;]?\s*/gi, ['So, ', 'That means ']],
+    [/\bHence[.,;]?\s*/gi, ['So, ', 'That\'s why ']],
+    [/\bTherefore[.,;]?\s*/gi, ['So, ', 'That\'s why ']],
+    [/\bNotwithstanding[.,;]?\s*/gi, ['Despite that, ', 'Even with that, ']],
+    [/\bInasmuch as\b/gi, ['since', 'because']],
+    [/\bIn order to\b/gi, ['to']],
+    [/\bDue to the fact that\b/gi, ['because', 'since']],
+    [/\bOwing to the fact that\b/gi, ['because', 'since']],
+    [/\bFor the purpose of\b/gi, ['to', 'for']],
+    [/\bIn the event that\b/gi, ['if']],
+    [/\bPrior to\b/gi, ['before']],
+    [/\bSubsequent to\b/gi, ['after']],
+    [/\bIn regard(?:s)? to\b/gi, ['about']],
+    [/\bWith respect to\b/gi, ['about']],
+    [/\bWith regard(?:s)? to\b/gi, ['about']],
+    [/\bPertaining to\b/gi, ['about']],
+    [/\bIn accordance with\b/gi, ['following', 'per']],
+    [/\bIn (?:the )?midst of\b/gi, ['during', 'while']],
+    [/\bIn (?:the )?absence of\b/gi, ['without']],
+    [/\bFor the sake of\b/gi, ['for']],
+    [/\bBy virtue of\b/gi, ['because of', 'thanks to']],
+    [/\bOn the basis of\b/gi, ['based on']],
+    [/\bWith a view to\b/gi, ['to', 'aiming to']],
+    [/\bIn the context of\b/gi, ['with', 'in']],
+    [/\bIn the realm of\b/gi, ['in']],
+    [/\bIn terms of\b/gi, ['for', 'regarding']],
+    [/\bAs a matter of fact[.,;]?\s*/gi, ['Actually, ', 'In fact, ']],
+    [/\bBy and large[.,;]?\s*/gi, ['Mostly, ', 'Generally, ']],
+    [/\bAll things considered[.,;]?\s*/gi, ['Overall, ', 'When you think about it, ']],
+    [/\bThat being said[.,;]?\s*/gi, ['That said, ', 'But, ']],
+    [/\bHaving said that[.,;]?\s*/gi, ['That said, ', 'But still, ']],
+    [/\bFirst and foremost[.,;]?\s*/gi, ['First off, ', 'Most importantly, ']],
+    [/\bLast but not least[.,;]?\s*/gi, ['And finally, ', 'One more thing — ']],
+    [/\bIt is worth emphasizing(?: that)?\s*/gi, ['Big point here: ', 'Key thing — ']],
+    [/\bFor (?:all )?intents and purposes[.,;]?\s*/gi, ['Basically, ', 'Effectively, ']],
+  ];
+
+  // ------------------------------------------------------------------
+  //  6. AI Buzzword -> plain-language replacements
+  // ------------------------------------------------------------------
+  var BUZZWORD_PATTERNS = [
+    [/\butiliz(?:e|es|ed|ing)\b/gi, function (m) {
+      var map = { 'utilize': 'use', 'utilizes': 'uses', 'utilized': 'used', 'utilizing': 'using' };
+      return map[m.toLowerCase()] || 'use';
+    }],
+    [/\bleverag(?:e|es|ed|ing)\b/gi, function (m) {
+      var map = { 'leverage': 'use', 'leverages': 'uses', 'leveraged': 'used', 'leveraging': 'using' };
+      return map[m.toLowerCase()] || 'use';
+    }],
+    [/\bfacilitat(?:e|es|ed|ing)\b/gi, function (m) {
+      var map = { 'facilitate': 'help with', 'facilitates': 'helps with', 'facilitated': 'helped with', 'facilitating': 'helping with' };
+      return map[m.toLowerCase()] || 'help with';
+    }],
+    [/\bimplement(?:s|ed|ing|ation|ations)?\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (l === 'implementation' || l === 'implementations') return pick(['setup', 'rollout', 'build']);
+      if (l === 'implementing') return 'building';
+      if (l === 'implemented') return 'built';
+      if (l === 'implements') return 'builds';
+      return pick(['build', 'set up', 'put in place']);
+    }],
+    [/\boptimiz(?:e|es|ed|ing|ation|ations)\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (/ation/.test(l)) return pick(['improvement', 'tuning', 'speedup']);
+      if (l === 'optimizing') return 'improving';
+      if (l === 'optimized') return 'improved';
+      if (l === 'optimizes') return 'improves';
+      return pick(['improve', 'speed up', 'fine-tune']);
+    }],
+    [/\bstreamlin(?:e|es|ed|ing)\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (l === 'streamlining') return 'simplifying';
+      if (l === 'streamlined') return 'simplified';
+      if (l === 'streamlines') return 'simplifies';
+      return pick(['simplify', 'clean up', 'make easier']);
+    }],
+    [/\bseamless(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? 'smoothly' : pick(['smooth', 'easy', 'clean']);
+    }],
+    [/\bensur(?:e|es|ed|ing)\b/gi, function (m) {
+      var map = { 'ensure': 'make sure', 'ensures': 'makes sure', 'ensured': 'made sure', 'ensuring': 'making sure' };
+      return map[m.toLowerCase()] || 'make sure';
+    }],
+    [/\bdelv(?:e|es|ed|ing)\b/gi, function (m) {
+      var map = { 'delve': 'dig into', 'delves': 'digs into', 'delved': 'dug into', 'delving': 'digging into' };
+      return map[m.toLowerCase()] || 'dig into';
+    }],
+    [/\bembark(?:s|ed|ing)?\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (l === 'embarking') return 'starting';
+      if (l === 'embarked') return 'started';
+      if (l === 'embarks') return 'starts';
+      return pick(['start', 'begin', 'kick off']);
+    }],
+    [/\bcommenc(?:e|es|ed|ing)\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (l === 'commencing') return 'starting';
+      if (l === 'commenced') return 'started';
+      if (l === 'commences') return 'starts';
+      return pick(['start', 'begin', 'kick off']);
+    }],
+    [/\bascertain(?:s|ed|ing)?\b/gi, function (m) {
+      var l = m.toLowerCase();
+      if (l === 'ascertaining') return 'figuring out';
+      if (l === 'ascertained') return 'figured out';
+      return pick(['find out', 'figure out', 'learn']);
+    }],
+    [/\belucidat(?:e|es|ed|ing)\b/gi, function () { return pick(['explain', 'clarify', 'spell out']); }],
+    [/\bameliorat(?:e|es|ed|ing)\b/gi, function () { return pick(['improve', 'fix', 'make better']); }],
+    [/\bexpedit(?:e|es|ed|ing)\b/gi, function () { return pick(['speed up', 'fast-track', 'rush']); }],
+    [/\baugment(?:s|ed|ing)?\b/gi, function () { return pick(['add to', 'boost', 'expand']); }],
+    [/\bmitigat(?:e|es|ed|ing)\b/gi, function () { return pick(['reduce', 'lessen', 'cut down on']); }],
+    [/\bpropagat(?:e|es|ed|ing)\b/gi, function () { return pick(['spread', 'share', 'pass along']); }],
+    [/\bexemplif(?:y|ies|ied|ying)\b/gi, function () { return pick(['show', 'demonstrate', 'illustrate']); }],
+    [/\bdemonstrat(?:e|es|ed|ing)\b/gi, function () { return pick(['show', 'prove', 'highlight']); }],
+    [/\bencompass(?:es|ed|ing)?\b/gi, function () { return pick(['include', 'cover', 'span']); }],
+    [/\bconstitut(?:e|es|ed|ing)\b/gi, function () { return pick(['make up', 'form', 'is']); }],
+    [/\bperpetuate(?:s|d)?\b/gi, function () { return pick(['keep going', 'continue', 'maintain']); }],
+    [/\bexacerbat(?:e|es|ed|ing)\b/gi, function () { return pick(['make worse', 'worsen', 'aggravate']); }],
+    [/\bdelineat(?:e|es|ed|ing)\b/gi, function () { return pick(['outline', 'describe', 'lay out']); }],
+    [/\barticul(?:ate|ates|ated|ating)\b/gi, function () { return pick(['express', 'say', 'describe']); }],
+    [/\bcultivat(?:e|es|ed|ing)\b/gi, function () { return pick(['build', 'grow', 'develop']); }],
+    [/\bbolster(?:s|ed|ing)?\b/gi, function () { return pick(['support', 'strengthen', 'boost']); }],
+    [/\bfoster(?:s|ed|ing)?\b/gi, function () { return pick(['encourage', 'support', 'build']); }],
+    [/\bgarner(?:s|ed|ing)?\b/gi, function () { return pick(['get', 'earn', 'win']); }],
+    [/\bprocur(?:e|es|ed|ing)\b/gi, function () { return pick(['get', 'buy', 'obtain']); }],
+    [/\bdisseminat(?:e|es|ed|ing)\b/gi, function () { return pick(['share', 'spread', 'distribute']); }],
+    [/\bspearhead(?:s|ed|ing)?\b/gi, function () { return pick(['lead', 'run', 'drive']); }],
+    [/\borchestrat(?:e|es|ed|ing)\b/gi, function () { return pick(['organize', 'coordinate', 'manage']); }],
+
+    // adjective / noun buzzwords
+    [/\brobust\b/gi, function () { return pick(['strong', 'solid', 'reliable']); }],
+    [/\bcomprehensive\b/gi, function () { return pick(['complete', 'full', 'thorough']); }],
+    [/\bholistic(?:ally)?\b/gi, function (m) {
+      return /ally$/i.test(m) ? 'overall' : pick(['overall', 'big-picture', 'whole']);
+    }],
+    [/\bsynerg(?:y|ies|istic|istically)\b/gi, function () { return pick(['teamwork', 'combo', 'working together']); }],
+    [/\bparadigm(?:s|atic)?\b/gi, function () { return pick(['model', 'approach', 'way of thinking']); }],
+    [/\bpivotal\b/gi, function () { return pick(['key', 'critical', 'major']); }],
+    [/\binnovati(?:ve|on|ons|vely)\b/gi, function () { return pick(['new', 'creative', 'fresh']); }],
+    [/\bcutting[- ]edge\b/gi, function () { return pick(['latest', 'newest', 'modern']); }],
+    [/\bstate[- ]of[- ]the[- ]art\b/gi, function () { return pick(['top-notch', 'best available', 'modern']); }],
+    [/\bgame[- ]chang(?:er|ers|ing)\b/gi, function () { return pick(['big deal', 'breakthrough', 'huge shift']); }],
+    [/\bgroundbreaking\b/gi, function () { return pick(['major', 'breakthrough', 'big']); }],
+    [/\brevolutionar(?:y|ize|ized|izing)\b/gi, function () { return pick(['transform', 'shake up', 'change']); }],
+    [/\bunparalleled\b/gi, function () { return pick(['unmatched', 'top-tier', 'best']); }],
+    [/\bmeticulous(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? 'carefully' : pick(['careful', 'thorough', 'detailed']);
+    }],
+    [/\bplethora\b/gi, function () { return pick(['ton', 'bunch', 'lot']); }],
+    [/\bmyriad(?:s)?\b/gi, function () { return pick(['tons of', 'a bunch of', 'loads of']); }],
+    [/\bmultifaceted\b/gi, function () { return pick(['complex', 'many-sided', 'varied']); }],
+    [/\bparamount\b/gi, function () { return pick(['top priority', 'critical', 'vital']); }],
+    [/\bendeavor(?:s)?\b/gi, function () { return pick(['effort', 'project', 'attempt']); }],
+    [/\bproficient(?:ly)?\b/gi, function () { return pick(['skilled', 'good at', 'experienced']); }],
+    [/\bsubsequently\b/gi, function () { return pick(['then', 'after that', 'later']); }],
+    [/\baforementioned\b/gi, function () { return pick(['earlier', 'that', 'the one I mentioned']); }],
+    [/\bhenceforth\b/gi, function () { return pick(['from now on', 'going forward']); }],
+    [/\bthereby\b/gi, function () { return pick(['so', 'which means']); }],
+    [/\bwherein\b/gi, 'where'],
+    [/\bthereof\b/gi, function () { return pick(['of that', 'of it']); }],
+    [/\btherein\b/gi, function () { return pick(['in that', 'in there']); }],
+    [/\bsubstantial(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? pick(['a lot', 'really', 'significantly']) : pick(['big', 'major', 'serious']);
+    }],
+    [/\bsignificant(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? pick(['a lot', 'really', 'noticeably']) : pick(['big', 'major', 'real']);
+    }],
+    [/\bnumerous\b/gi, function () { return pick(['many', 'lots of', 'a bunch of']); }],
+    [/\bsufficient(?:ly)?\b/gi, function () { return pick(['enough', 'plenty of']); }],
+    [/\bexceedingly\b/gi, function () { return pick(['really', 'super', 'extremely']); }],
+    [/\bnoteworthy\b/gi, function () { return pick(['notable', 'interesting', 'worth a look']); }],
+    [/\bundertake(?:s|n)?\b/gi, function () { return pick(['take on', 'do', 'start']); }],
+    [/\bundertaking(?:s)?\b/gi, function () { return pick(['project', 'effort', 'task']); }],
+    [/\bpertinent\b/gi, function () { return pick(['relevant', 'important', 'related']); }],
+    [/\bintrinsic(?:ally)?\b/gi, function () { return pick(['built-in', 'natural', 'core']); }],
+    [/\bextrinsic(?:ally)?\b/gi, function () { return pick(['external', 'outside']); }],
+    [/\bdichotomy\b/gi, function () { return pick(['split', 'divide', 'contrast']); }],
+    [/\bpropensity\b/gi, function () { return pick(['tendency', 'habit', 'lean towards']); }],
+    [/\bpredilection\b/gi, function () { return pick(['preference', 'liking']); }],
+    [/\bproclivity\b/gi, function () { return pick(['tendency', 'inclination']); }],
+    [/\bjuxtapos(?:e|es|ed|ing|ition)\b/gi, function () { return pick(['compare', 'contrast', 'put side by side']); }],
+    [/\bexponential(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? pick(['rapidly', 'really fast']) : pick(['rapid', 'huge', 'fast']);
+    }],
+    [/\bfundamental(?:ly)?\b/gi, function (m) {
+      return /ly$/i.test(m) ? pick(['basically', 'at its core']) : pick(['basic', 'core', 'key']);
+    }],
+    [/\bnavigat(?:e|es|ed|ing)\b/gi, function () { return pick(['work through', 'handle', 'deal with']); }],
+    [/\bempow(?:er|ers|ered|ering)\b/gi, function () { return pick(['help', 'enable', 'give power to']); }],
+    [/\btransform(?:ative|ational)\b/gi, function () { return pick(['big', 'game-changing', 'major']); }],
+    [/\bactionable\b/gi, function () { return pick(['practical', 'useful', 'something you can act on']); }],
+    [/\bscalable\b/gi, function () { return pick(['grows with you', 'expandable', 'flexible']); }],
+    [/\bsustainable\b/gi, function () { return pick(['lasting', 'long-term', 'maintainable']); }],
+    [/\btangible\b/gi, function () { return pick(['real', 'concrete', 'actual']); }],
+    [/\bintangible\b/gi, function () { return pick(['abstract', 'hard to pin down']); }],
+    [/\bvisceral\b/gi, function () { return pick(['gut-level', 'deep', 'raw']); }],
+    [/\bwhereupon\b/gi, function () { return pick(['and then', 'after which']); }],
+    [/\bhitherto\b/gi, function () { return pick(['until now', 'so far']); }],
+    [/\bheretofore\b/gi, function () { return pick(['until now', 'before this']); }],
+    [/\binsofar as\b/gi, function () { return pick(['as far as', 'to the extent that']); }],
+    [/\bnotwithstanding\b/gi, function () { return pick(['despite', 'even with']); }],
+    [/\bwhilst\b/gi, 'while'],
+    [/\bamongst\b/gi, 'among'],
+    [/\bforthwith\b/gi, function () { return pick(['right away', 'immediately']); }],
+    [/\b(?:a )?vast (?:array|majority|number) of\b/gi, function () { return pick(['a lot of', 'tons of', 'many']); }],
+    [/\ba wide (?:range|variety|spectrum) of\b/gi, function () { return pick(['lots of different', 'many kinds of', 'all sorts of']); }],
+    [/\bplay a (?:crucial|pivotal|vital|key|significant|important) role\b/gi,
+      function () { return pick(['really matter', 'are a big deal', 'make a real difference']); }],
+    [/\bhas the potential to\b/gi, function () { return pick(['could', 'might', 'can']); }],
+    [/\bhas the capacity to\b/gi, function () { return pick(['can', 'is able to']); }],
+    [/\bin a (?:timely|efficient|effective) manner\b/gi,
+      function () { return pick(['quickly', 'well', 'fast']); }],
+    [/\bon a (?:daily|regular|consistent) basis\b/gi,
+      function () { return pick(['every day', 'regularly', 'all the time']); }],
+    [/\bat the present time\b/gi, function () { return pick(['right now', 'currently']); }],
+    [/\bat this juncture\b/gi, function () { return pick(['right now', 'at this point']); }],
+    [/\bat this point in time\b/gi, function () { return pick(['right now', 'at this point']); }],
+  ];
+
+  // ------------------------------------------------------------------
+  //  7. Contraction map
+  // ------------------------------------------------------------------
+  var CONTRACTION_MAP = {
+    'I am': 'I\'m', 'I have': 'I\'ve', 'I will': 'I\'ll', 'I would': 'I\'d', 'I had': 'I\'d',
+    'you are': 'you\'re', 'you have': 'you\'ve', 'you will': 'you\'ll', 'you would': 'you\'d',
+    'he is': 'he\'s', 'he has': 'he\'s', 'he will': 'he\'ll', 'he would': 'he\'d',
+    'she is': 'she\'s', 'she has': 'she\'s', 'she will': 'she\'ll', 'she would': 'she\'d',
+    'it is': 'it\'s', 'it has': 'it\'s', 'it will': 'it\'ll', 'it would': 'it\'d',
+    'we are': 'we\'re', 'we have': 'we\'ve', 'we will': 'we\'ll', 'we would': 'we\'d',
+    'they are': 'they\'re', 'they have': 'they\'ve', 'they will': 'they\'ll', 'they would': 'they\'d',
+    'that is': 'that\'s', 'that has': 'that\'s', 'that will': 'that\'ll', 'that would': 'that\'d',
+    'what is': 'what\'s', 'what has': 'what\'s', 'what will': 'what\'ll',
+    'who is': 'who\'s', 'who has': 'who\'s', 'who will': 'who\'ll',
+    'where is': 'where\'s', 'where has': 'where\'s',
+    'when is': 'when\'s', 'when has': 'when\'s',
+    'why is': 'why\'s',
+    'how is': 'how\'s', 'how has': 'how\'s',
+    'there is': 'there\'s', 'there has': 'there\'s', 'there will': 'there\'ll',
+    'here is': 'here\'s',
+    'do not': 'don\'t', 'does not': 'doesn\'t', 'did not': 'didn\'t',
+    'is not': 'isn\'t', 'are not': 'aren\'t',
+    'was not': 'wasn\'t', 'were not': 'weren\'t',
+    'have not': 'haven\'t', 'has not': 'hasn\'t', 'had not': 'hadn\'t',
+    'will not': 'won\'t', 'would not': 'wouldn\'t',
+    'could not': 'couldn\'t', 'should not': 'shouldn\'t',
+    'can not': 'can\'t', 'cannot': 'can\'t',
+    'might not': 'mightn\'t', 'must not': 'mustn\'t', 'need not': 'needn\'t',
+    'let us': 'let\'s'
   };
 
-  var CONTRACTION_MAP = [
-    [/\bI am\b/g, "I'm"],
-    [/\bI have\b/g, "I've"],
-    [/\bI will\b/g, "I'll"],
-    [/\bI would\b/g, "I'd"],
-    [/\byou are\b/gi, "you're"],
-    [/\byou have\b/gi, "you've"],
-    [/\byou will\b/gi, "you'll"],
-    [/\byou would\b/gi, "you'd"],
-    [/\bhe is\b/gi, "he's"],
-    [/\bshe is\b/gi, "she's"],
-    [/\bit is\b/gi, "it's"],
-    [/\bwe are\b/gi, "we're"],
-    [/\bwe have\b/gi, "we've"],
-    [/\bwe will\b/gi, "we'll"],
-    [/\bthey are\b/gi, "they're"],
-    [/\bthey have\b/gi, "they've"],
-    [/\bthey will\b/gi, "they'll"],
-    [/\bthat is\b/gi, "that's"],
-    [/\bwhat is\b/gi, "what's"],
-    [/\bthere is\b/gi, "there's"],
-    [/\bhere is\b/gi, "here's"],
-    [/\bwho is\b/gi, "who's"],
-    [/\bdo not\b/gi, "don't"],
-    [/\bdoes not\b/gi, "doesn't"],
-    [/\bdid not\b/gi, "didn't"],
-    [/\bis not\b/gi, "isn't"],
-    [/\bare not\b/gi, "aren't"],
-    [/\bwas not\b/gi, "wasn't"],
-    [/\bwere not\b/gi, "weren't"],
-    [/\bhave not\b/gi, "haven't"],
-    [/\bhas not\b/gi, "hasn't"],
-    [/\bhad not\b/gi, "hadn't"],
-    [/\bwill not\b/gi, "won't"],
-    [/\bwould not\b/gi, "wouldn't"],
-    [/\bcould not\b/gi, "couldn't"],
-    [/\bshould not\b/gi, "shouldn't"],
-    [/\bcan not\b/gi, "can't"],
-    [/\bcannot\b/gi, "can't"],
-    [/\blet us\b/gi, "let's"]
+  // ------------------------------------------------------------------
+  //  8. Human voice injection lists
+  // ------------------------------------------------------------------
+  var CONV_STARTERS = [
+    'Honestly, ', 'Basically, ', 'Look, ', 'To be fair, ',
+    'Truth is, ', 'I mean, ', 'So yeah, ', 'The thing is, ',
+    'Actually, ', 'Really though, ', 'Point is, ', 'Bottom line, ',
+    'Frankly, ', 'Just saying — ', 'For real though, ', 'Real talk, '
   ];
 
-  // Pre-compiled regexes for AI transition replacement
-  var AI_TRANSITION_REGEXES = AI_TRANSITIONS.map(function (t) {
-    return new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[,]?\\s', 'gi');
-  });
-
-  // Pre-compiled regexes for AI filler replacement
-  var AI_FILLER_COMPILED = [];
-  for (var _k in AI_FILLER_REPLACEMENTS) {
-    if (AI_FILLER_REPLACEMENTS.hasOwnProperty(_k)) {
-      AI_FILLER_COMPILED.push({
-        regex: new RegExp('\\b' + _k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'),
-        replacement: AI_FILLER_REPLACEMENTS[_k]
-      });
-    }
-  }
-
-  // ── Tone detection ───────────────────────────────────────────────────
-
-  var EMAIL_SIGNALS = [
-    /\bdear\b/i, /\bregards\b/i, /\bsincerely\b/i,
-    /\bhi\b/i, /\bhello\b/i, /\bthank you\b/i,
-    /\bthanks\b/i, /\bplease find\b/i, /\bkind regards\b/i,
-    /\bbest regards\b/i, /\blooking forward\b/i,
-    /\bI hope this (?:email|message)\b/i, /\battached\b/i,
-    /\bfollow(?:ing)? up\b/i, /\blet me know\b/i,
-    /\bsubject:/i, /\bfrom:/i, /\bto:/i
+  var THINKING_PAUSES = [
+    'So basically... ', 'I mean... ', 'Look... ',
+    'Thing is... ', 'Well... ', 'Hmm, ', 'Okay so... '
   ];
 
-  var TECHNICAL_SIGNALS = [
-    /\bAPI\b/, /\bfunction\b/i, /\bvariable\b/i,
-    /\bclass\b/i, /\bobject\b/i, /\barray\b/i,
-    /\bdatabase\b/i, /\bserver\b/i, /\bclient\b/i,
-    /\bframework\b/i, /\balgorithm\b/i, /\bprotocol\b/i,
-    /\brepository\b/i, /\bdeployment\b/i, /\bconfiguration\b/i,
-    /\bmodule\b/i, /\binterface\b/i, /\bimplementation\b/i,
-    /\bHTTP\b/, /\bJSON\b/, /\bSQL\b/, /\bCSS\b/, /\bHTML\b/,
-    /\bcode\b/i, /\bbug\b/i, /\bdebug\b/i
+  var CASUAL_QUESTIONS = [
+    ' Right?', ' You know?', ' Make sense?',
+    ' See what I mean?', ' Get it?', ' Fair enough?'
   ];
+
+  var PERSONAL_TOUCHES = [
+    'I think ', 'I\'d say ', 'honestly ', 'frankly ',
+    'in my experience ', 'from what I\'ve seen '
+  ];
+
+  // Combined pattern array for scoring/counting
+  var ALL_PHRASE_PATTERNS = [].concat(GREETING_PHRASES, STRUCTURE_PHRASES, PASSIVE_PHRASES, POLITE_PHRASES);
+  var ALL_PATTERNS = [].concat(ALL_PHRASE_PATTERNS, TRANSITION_PATTERNS, BUZZWORD_PATTERNS);
+
+  /* ===================================================================
+   *  TONE DETECTION
+   * =================================================================*/
 
   function detectTone(text) {
-    var emailScore = 0;
-    var techScore = 0;
+    if (!text) return 'casual';
+    var lower = text.toLowerCase();
+
+    var emailTerms = ['hi ', 'hello', 'dear ', 'greetings', 'subject:', 'regards',
+      'sincerely', 'best regards', 'thank you', 'attached', 'meeting',
+      'schedule', 'follow up', 'cc:', 'bcc:', 'forward', 'reply',
+      'inbox', 're:', 'fwd:', 'recipient', 'sender', 'email'];
+    var techTerms = ['api', 'function', 'database', 'server', 'deploy',
+      'code', 'repository', 'endpoint', 'algorithm', 'framework',
+      'compile', 'runtime', 'debug', 'syntax', 'module', 'class',
+      'object', 'array', 'string', 'boolean', 'integer', 'null',
+      'undefined', 'http', 'https', 'json', 'xml', 'html', 'css',
+      'sql', 'query', 'schema', 'config', 'docker', 'kubernetes',
+      'pipeline', 'ci/cd', 'git', 'branch', 'merge', 'commit',
+      'refactor', 'unit test', 'integration', 'backend', 'frontend'];
+    var proTerms = ['stakeholder', 'quarterly', 'revenue', 'kpi', 'roi',
+      'strategy', 'deliverable', 'milestone', 'budget', 'objective',
+      'initiative', 'compliance', 'governance', 'fiscal', 'board',
+      'executive', 'management', 'performance', 'benchmark', 'assessment'];
+
+    var emailScore = 0, techScore = 0, proScore = 0;
     var i;
+    for (i = 0; i < emailTerms.length; i++) { if (lower.indexOf(emailTerms[i]) !== -1) emailScore++; }
+    for (i = 0; i < techTerms.length; i++) { if (lower.indexOf(techTerms[i]) !== -1) techScore++; }
+    for (i = 0; i < proTerms.length; i++) { if (lower.indexOf(proTerms[i]) !== -1) proScore++; }
 
-    for (i = 0; i < EMAIL_SIGNALS.length; i++) {
-      if (EMAIL_SIGNALS[i].test(text)) emailScore++;
-    }
-    for (i = 0; i < TECHNICAL_SIGNALS.length; i++) {
-      if (TECHNICAL_SIGNALS[i].test(text)) techScore++;
-    }
-
-    if (emailScore >= 3) return 'email';
     if (techScore >= 3) return 'technical';
+    if (emailScore >= 3) return 'email';
+    if (proScore >= 2) return 'professional';
+    if (emailScore >= 2) return 'email';
     return 'casual';
   }
 
-  // ── AI-ness scorer ───────────────────────────────────────────────────
+  /* ===================================================================
+   *  AI-NESS SCORING
+   * =================================================================*/
 
   function scoreAIness(text) {
+    if (!text) return 0;
     var score = 0;
-    var lower = text.toLowerCase();
+    var i, m;
 
-    // Check for AI transition words
-    for (var i = 0; i < AI_TRANSITIONS.length; i++) {
-      if (lower.indexOf(AI_TRANSITIONS[i]) !== -1) score += 2;
+    // +3 for each formal AI phrase
+    for (i = 0; i < ALL_PHRASE_PATTERNS.length; i++) {
+      ALL_PHRASE_PATTERNS[i][0].lastIndex = 0;
+      m = text.match(ALL_PHRASE_PATTERNS[i][0]);
+      if (m) score += 3 * m.length;
+    }
+    // +2 for each AI transition
+    for (i = 0; i < TRANSITION_PATTERNS.length; i++) {
+      TRANSITION_PATTERNS[i][0].lastIndex = 0;
+      m = text.match(TRANSITION_PATTERNS[i][0]);
+      if (m) score += 2 * m.length;
+    }
+    // +2 for each AI buzzword
+    for (i = 0; i < BUZZWORD_PATTERNS.length; i++) {
+      BUZZWORD_PATTERNS[i][0].lastIndex = 0;
+      m = text.match(BUZZWORD_PATTERNS[i][0]);
+      if (m) score += 2 * m.length;
     }
 
-    // Check for AI filler words
-    for (var j = 0; j < AI_FILLER_PHRASES.length; j++) {
-      if (AI_FILLER_PHRASES[j].test(text)) {
-        score += 2;
-        AI_FILLER_PHRASES[j].lastIndex = 0;
-      }
-    }
-
-    // Uniform sentence length is an AI signal
+    // +5 if sentence-length variance is very low (uniform = AI signal)
     var sentences = splitSentences(text);
-    if (sentences.length > 3) {
-      var lengths = sentences.map(function (s) { return s.split(/\s+/).length; });
-      var avg = lengths.reduce(function (a, b) { return a + b; }, 0) / lengths.length;
-      var variance = lengths.reduce(function (sum, l) { return sum + Math.pow(l - avg, 2); }, 0) / lengths.length;
-      if (variance < UNIFORM_VARIANCE_THRESHOLD) score += UNIFORM_VARIANCE_PENALTY;
+    if (sentences.length > 2) {
+      var lens = [];
+      for (i = 0; i < sentences.length; i++) lens.push(wc(sentences[i]));
+      var avg = 0;
+      for (i = 0; i < lens.length; i++) avg += lens[i];
+      avg /= lens.length;
+      var variance = 0;
+      for (i = 0; i < lens.length; i++) variance += (lens[i] - avg) * (lens[i] - avg);
+      variance /= lens.length;
+      if (variance < 15) score += 5;
     }
 
-    // Very long paragraphs with no line breaks
-    var paras = splitParagraphs(text);
-    for (var k = 0; k < paras.length; k++) {
-      if (paras[k].split(/\s+/).length > LONG_PARAGRAPH_WORDS) score += LONG_PARAGRAPH_PENALTY;
+    // +3 per very long paragraph (80+ words)
+    var paragraphs = text.split(/\n\s*\n/);
+    for (i = 0; i < paragraphs.length; i++) {
+      if (wc(paragraphs[i]) > 80) score += 3;
     }
 
-    return score;
+    // +2 for lack of contractions in long text
+    if (text.length > 200 && !/\w'\w/.test(text)) {
+      score += 2;
+    }
+
+    // -2 for each existing contraction found
+    var contractionHits = (text.match(/\w'\w/g) || []).length;
+    score -= contractionHits * 2;
+
+    // -3 for casual language already present
+    var casualTerms = ['yeah', 'hey', 'gonna', 'gotta', 'kinda', 'sorta',
+      'wanna', 'lemme', 'tbh', 'lol', 'btw', 'imo', 'ngl', 'nah', 'yep', 'nope'];
+    var lower = text.toLowerCase();
+    for (i = 0; i < casualTerms.length; i++) {
+      if (lower.indexOf(casualTerms[i]) !== -1) score -= 3;
+    }
+
+    return Math.max(score, 0);
   }
 
-  // ── Rule 1: Vary sentence structure ──────────────────────────────────
+  /* ===================================================================
+   *  PATTERN COUNTER
+   * =================================================================*/
 
-  function varySentenceStructure(sentences) {
-    if (sentences.length <= 1) return sentences;
+  function countAIPatterns(text) {
+    if (!text) return 0;
+    var count = 0;
+    for (var i = 0; i < ALL_PATTERNS.length; i++) {
+      ALL_PATTERNS[i][0].lastIndex = 0;
+      var m = text.match(ALL_PATTERNS[i][0]);
+      if (m) count += m.length;
+    }
+    return count;
+  }
 
-    var result = [];
-    for (var i = 0; i < sentences.length; i++) {
-      var s = sentences[i];
-      var words = s.split(/\s+/);
+  /* ===================================================================
+   *  STAGE 2 -- Aggressive AI Pattern Removal
+   * =================================================================*/
 
-      // Occasionally merge two short sentences
-      if (words.length < 8 && i + 1 < sentences.length && chance(30)) {
-        var next = sentences[i + 1];
-        var nextWords = next.split(/\s+/);
-        if (nextWords.length < 10) {
-          var connector = pick([', and ', '; ', ', so ', ', plus ']);
-          var merged = s.replace(/[.]\s*$/, '') + connector +
-            next.charAt(0).toLowerCase() + next.slice(1);
-          result.push(merged);
-          i++; // skip next
-          continue;
-        }
-      }
-
-      // Occasionally split very long sentences
-      if (words.length > 25 && chance(40)) {
-        var mid = Math.floor(words.length / 2);
-        // Find a natural break near the midpoint
-        var breakPoint = mid;
-        for (var j = mid - 3; j <= mid + 3 && j < words.length; j++) {
-          if (j < 0) continue;
-          var w = words[j].toLowerCase();
-          if (['and', 'but', 'which', 'that', 'while', 'because', 'since', 'although'].indexOf(w) !== -1) {
-            breakPoint = j;
-            break;
+  function replacePatterns(text, patterns) {
+    for (var i = 0; i < patterns.length; i++) {
+      var re = patterns[i][0];
+      var rep = patterns[i][1];
+      re.lastIndex = 0;
+      if (typeof rep === 'function') {
+        text = text.replace(re, rep);
+      } else if (Array.isArray(rep)) {
+        text = text.replace(re, function (matched) {
+          var chosen = pick(rep);
+          // Preserve case: if matched started lowercase, lowercase the replacement
+          if (/^[a-z]/.test(matched) && /^[A-Z]/.test(chosen)) {
+            chosen = lcFirst(chosen);
           }
-        }
-        var first = words.slice(0, breakPoint).join(' ');
-        var second = words.slice(breakPoint).join(' ');
-        if (!first.match(/[.!?]$/)) first += '.';
-        second = second.charAt(0).toUpperCase() + second.slice(1);
-        result.push(first);
-        result.push(second);
-        continue;
+          return chosen;
+        });
+      } else {
+        text = text.replace(re, function (matched) {
+          var r = rep;
+          if (/^[a-z]/.test(matched) && /^[A-Z]/.test(r)) {
+            r = lcFirst(r);
+          }
+          return r;
+        });
       }
-
-      result.push(s);
     }
-    return result;
+    return text;
   }
 
-  // ── Rule 2: Remove AI patterns ───────────────────────────────────────
+  /* ===================================================================
+   *  STAGE 3 -- Sentence Restructuring
+   * =================================================================*/
 
-  function removeAIPatterns(text) {
-    var result = text;
-
-    // Replace AI transition words at the start of sentences
-    for (var i = 0; i < AI_TRANSITION_REGEXES.length; i++) {
-      var regex = AI_TRANSITION_REGEXES[i];
-      regex.lastIndex = 0;
-      result = result.replace(regex, function () {
-        return pick(HUMAN_TRANSITIONS) + ', ';
-      });
-    }
-
-    // Replace AI filler words
-    for (var j = 0; j < AI_FILLER_COMPILED.length; j++) {
-      var entry = AI_FILLER_COMPILED[j];
-      var replacement = entry.replacement;
-      entry.regex.lastIndex = 0;
-      result = result.replace(entry.regex, function (match) {
-        if (!chance(75)) return match; // Don't replace every instance
-        // Preserve casing
-        if (match.charAt(0) === match.charAt(0).toUpperCase()) {
-          return replacement.charAt(0).toUpperCase() + replacement.slice(1);
-        }
-        return replacement;
-      });
-    }
-
-    return result;
-  }
-
-  // ── Rule 3: Add human imperfections ──────────────────────────────────
-
-  function addContractions(text) {
-    var result = text;
-    for (var i = 0; i < CONTRACTION_MAP.length; i++) {
-      var pair = CONTRACTION_MAP[i];
-      result = result.replace(pair[0], function (match) {
-        if (chance(80)) return pair[1];
-        return match;
-      });
-    }
-    return result;
-  }
-
-  function addConversationalConnectors(sentences, tone) {
-    if (tone === 'technical') return sentences; // Keep technical text cleaner
-
+  function restructureSentences(sentences, agg) {
     var result = [];
-    var addedCount = 0;
-    var maxAdds = Math.max(1, Math.floor(sentences.length * 0.2));
-
     for (var i = 0; i < sentences.length; i++) {
-      var s = sentences[i];
+      var s = sentences[i].trim();
+      if (!s) continue;
+      var words = wc(s);
 
-      // Don't add to the first sentence or too many overall
-      if (i > 0 && addedCount < maxAdds && chance(25)) {
-        var connector = pick(CONVERSATIONAL_STARTERS);
-        // Lowercase the first letter of the sentence when prepending
-        s = connector + s.charAt(0).toLowerCase() + s.slice(1);
-        addedCount++;
-      }
-      result.push(s);
-    }
-    return result;
-  }
-
-  // ── Rule 4: Preserve meaning ─────────────────────────────────────────
-  // This is enforced by the nature of our transformations:
-  // we never add new facts, only adjust phrasing.
-
-  // ── Rule 5: Context-aware tone adjustments ───────────────────────────
-
-  function adjustForEmail(text) {
-    // Make email greetings/closings feel more natural
-    text = text.replace(/\bI hope this email finds you well\.?\s*/gi, function () {
-      return pick([
-        'Hope you\'re doing well. ',
-        'Hey, hope things are good. ',
-        'Quick note — ',
-        ''
-      ]);
-    });
-    text = text.replace(/\bPlease do not hesitate to\b/gi, 'Feel free to');
-    text = text.replace(/\bPlease feel free to\b/gi, 'Feel free to');
-    text = text.replace(/\bAt your earliest convenience\b/gi, 'When you get a chance');
-    text = text.replace(/\bI am writing to inform you\b/gi, 'Just wanted to let you know');
-    text = text.replace(/\bI would like to bring to your attention\b/gi, 'Wanted to mention');
-    text = text.replace(/\bAs per our previous (?:conversation|discussion)\b/gi, 'Like we talked about');
-    text = text.replace(/\bKind regards\b/gi, function () {
-      return pick(['Thanks', 'Cheers', 'Best', 'Talk soon']);
-    });
-    text = text.replace(/\bWarm regards\b/gi, function () {
-      return pick(['Thanks', 'Cheers', 'Best']);
-    });
-    text = text.replace(/\bBest regards\b/gi, function () {
-      return pick(['Thanks', 'Best', 'Cheers']);
-    });
-    return text;
-  }
-
-  function adjustForTechnical(text) {
-    // Keep clarity but reduce robot tone
-    text = text.replace(/\bIt is important to note that\b/gi, 'Worth noting:');
-    text = text.replace(/\bIt should be noted that\b/gi, 'Note that');
-    text = text.replace(/\bIn order to achieve this\b/gi, 'To do this');
-    text = text.replace(/\bThe aforementioned\b/gi, 'That');
-    text = text.replace(/\bthe above-mentioned\b/gi, 'that');
-    return text;
-  }
-
-  function adjustForCasual(text) {
-    // Loosen structure further
-    text = text.replace(/\bIt is important to note that\b/gi, function () {
-      return pick(['Thing is,', 'Worth mentioning,', 'Just so you know,']);
-    });
-    text = text.replace(/\bIt should be noted that\b/gi, function () {
-      return pick(['Keep in mind', 'Just note that', 'FYI,']);
-    });
-    text = text.replace(/\bIt is worth noting that\b/gi, function () {
-      return pick(["It's worth knowing that", 'One thing —']);
-    });
-    text = text.replace(/\bHowever,\s*/gi, function () {
-      return pick(['But ', 'Though, ', 'Still, ', 'That said, ']);
-    });
-    text = text.replace(/\bTherefore,\s*/gi, function () {
-      return pick(['So ', 'That means ', 'Basically, ']);
-    });
-    text = text.replace(/\bFor example,\s*/gi, function () {
-      return pick(['Like, ', 'Say, ', 'For instance, ']);
-    });
-    return text;
-  }
-
-  // ── Rule 6: Avoid detection signals ──────────────────────────────────
-
-  function breakParagraphSymmetry(paragraphs) {
-    if (paragraphs.length <= 2) return paragraphs;
-
-    var result = [];
-    for (var i = 0; i < paragraphs.length; i++) {
-      var p = paragraphs[i].trim();
-
-      // Occasionally merge short adjacent paragraphs
-      if (i + 1 < paragraphs.length && chance(20)) {
-        var nextP = paragraphs[i + 1].trim();
-        var pWords = p.split(/\s+/).length;
-        var nextWords = nextP.split(/\s+/).length;
-        if (pWords < 20 && nextWords < 20) {
-          result.push(p + ' ' + nextP);
-          i++;
+      // Split very long sentences at natural break points
+      if (words > 28 && chance(agg)) {
+        var splitRes = trySplit(s);
+        if (splitRes) {
+          for (var k = 0; k < splitRes.length; k++) result.push(splitRes[k]);
           continue;
         }
       }
 
-      // Occasionally split long paragraphs
-      var sentences = splitSentences(p);
-      if (sentences.length > 5 && chance(35)) {
-        var splitPoint = Math.floor(sentences.length * (0.4 + Math.random() * 0.2));
-        result.push(sentences.slice(0, splitPoint).join(' '));
-        result.push(sentences.slice(splitPoint).join(' '));
+      // Merge two short adjacent sentences
+      if (words < 6 && i + 1 < sentences.length && wc(sentences[i + 1]) < 8 && chance(agg * 0.5)) {
+        var merged = s.replace(/[.!?]+$/, '') + ' — ' + lcFirst(sentences[i + 1].trim());
+        result.push(merged);
+        i++;
         continue;
       }
 
-      result.push(p);
+      result.push(s);
     }
     return result;
   }
 
-  function unbalanceLists(text) {
-    // Detect numbered or bulleted lists and slightly adjust
+  function trySplit(s) {
+    var connectors = [
+      /,\s*(?:and|but|which|where|while|although|because|since|so|yet)\s+/i,
+      /;\s*/,
+      /\s+(?:however|but|although|while|whereas)\s+/i
+    ];
+    for (var i = 0; i < connectors.length; i++) {
+      var idx = s.search(connectors[i]);
+      if (idx > 10 && idx < s.length - 10) {
+        var match = s.match(connectors[i]);
+        if (!match) continue;
+        var first = s.slice(0, idx).trim();
+        var rest = s.slice(idx + match[0].length).trim();
+        if (wc(first) < 5 || wc(rest) < 4) continue;
+        if (!/[.!?]$/.test(first)) first += '.';
+        return [first, ucFirst(rest)];
+      }
+    }
+    // Try splitting on long comma-separated clauses
+    var commaIdx = s.indexOf(', ');
+    if (commaIdx > 15 && commaIdx < s.length - 15) {
+      var p1 = s.slice(0, commaIdx).trim();
+      var p2 = s.slice(commaIdx + 2).trim();
+      if (wc(p1) >= 5 && wc(p2) >= 5) {
+        if (!/[.!?]$/.test(p1)) p1 += '.';
+        return [p1, ucFirst(p2)];
+      }
+    }
+    return null;
+  }
+
+  /* ===================================================================
+   *  STAGE 4 -- Human Voice Injection
+   * =================================================================*/
+
+  function applyContractions(text, probability) {
+    var keys = [];
+    for (var p in CONTRACTION_MAP) {
+      if (CONTRACTION_MAP.hasOwnProperty(p)) keys.push(p);
+    }
+    // Sort longest-first to avoid partial matches
+    keys.sort(function (a, b) { return b.length - a.length; });
+
+    for (var i = 0; i < keys.length; i++) {
+      if (!chance(probability)) continue;
+      var re = new RegExp('\\b' + escRe(keys[i]) + '\\b', 'gi');
+      var val = CONTRACTION_MAP[keys[i]];
+      text = text.replace(re, val);
+    }
+    return text;
+  }
+
+  function injectHumanVoice(sentences, ctx, agg) {
+    var starterRate = ctx === 'technical' ? 0.08 : (ctx === 'professional' ? 0.12 : 0.22);
+    var questionRate = ctx === 'technical' ? 0.03 : (ctx === 'professional' ? 0.05 : 0.12);
+    var pauseRate = 0.06;
+    var personalRate = ctx === 'technical' ? 0.05 : 0.12;
+    var dashRate = 0.08;
+
+    // Scale by aggressiveness (normalize around medium=0.40)
+    var scale = agg / 0.40;
+    starterRate *= scale;
+    questionRate *= scale;
+    pauseRate *= scale;
+    personalRate *= scale;
+    dashRate *= scale;
+
+    // Pattern to detect already-casual sentence starts
+    var casualStartRe = /^(?:So|But|And|Also|Plus|Hey|Look|I mean|Honestly|Basically|Actually|Frankly|Heads up|Just|Hi|Hello|Good news|Great news|Quick|Turns out|Truth is|The thing is|Bottom line|TL;DR|Anyway|Cheers|Thanks)/i;
+    var result = [];
+    var lastInjection = -3; // track to avoid injecting too close together
+
+    for (var i = 0; i < sentences.length; i++) {
+      var s = sentences[i];
+      var gap = i - lastInjection;
+      var alreadyCasual = casualStartRe.test(s);
+      var tooShort = wc(s) < 5;
+
+      // Conversational starters -- not on first sentence, need gap
+      if (i > 0 && gap >= 2 && !alreadyCasual && !tooShort && chance(starterRate)) {
+        s = pick(CONV_STARTERS) + lcFirst(s);
+        lastInjection = i;
+      }
+
+      // Thinking pauses -- rarely, needs big gap, not on casual/short
+      if (i > 1 && gap >= 4 && !alreadyCasual && !tooShort && chance(pauseRate)) {
+        s = pick(THINKING_PAUSES) + lcFirst(s);
+        lastInjection = i;
+      }
+
+      // Casual question at end of declarative sentence
+      if (gap >= 3 && !tooShort && chance(questionRate) && /\.$/.test(s)) {
+        s = s.replace(/\.$/, pick(CASUAL_QUESTIONS));
+        lastInjection = i;
+      }
+
+      // Personal touches -- not in technical writing, not on casual/short
+      if (gap >= 3 && ctx !== 'technical' && !alreadyCasual && !tooShort && chance(personalRate) && /^[A-Z]/.test(s)) {
+        s = pick(PERSONAL_TOUCHES) + lcFirst(s);
+        lastInjection = i;
+      }
+
+      // Em dash for variety -- swap one comma (only on longer sentences)
+      if (!tooShort && chance(dashRate) && s.indexOf(',') !== -1) {
+        s = s.replace(/,/, ' —');
+      }
+
+      result.push(s);
+    }
+    return result;
+  }
+
+  /* ===================================================================
+   *  STAGE 5 -- Context-Specific Adjustments
+   * =================================================================*/
+
+  function contextAdjust(text, ctx) {
+    if (ctx === 'email') {
+      text = text.replace(/^(?:Dear\b[^.!?\n]*[.,;]?\s*\n?)/i, '');
+      if (!/^(?:Hey|Hi|Hello|Yo|What's up)/i.test(text.trim())) {
+        text = pick(['Hey! ', 'Hi! ', 'Hey there — ']) + text.trim();
+      }
+    }
+    if (ctx === 'casual') {
+      text = text.replace(/\bvery\b/gi, function () { return pick(['super', 'really', 'pretty']); });
+      text = text.replace(/\bquite\b/gi, function () { return pick(['pretty', 'really']); });
+      text = text.replace(/\bhowever\b/gi, function () { return pick(['but', 'though']); });
+    }
+    if (ctx === 'technical') {
+      text = text.replace(/\bprior to deployment\b/gi, 'before we push this live');
+      text = text.replace(/\bprior to (?:the )?release\b/gi, 'before release');
+      text = text.replace(/\bthoroughly tested\b/gi, function () { return pick(['well-tested', 'properly tested']); });
+      text = text.replace(/\bproperly documented\b/gi, function () { return pick(['well-documented', 'documented properly']); });
+    }
+    if (ctx === 'professional') {
+      text = text.replace(/\bvery important\b/gi, function () { return pick(['really important', 'key']); });
+    }
+    return text;
+  }
+
+  /* ===================================================================
+   *  STAGE 6 -- Final Polish
+   * =================================================================*/
+
+  function polish(text) {
+    text = text.replace(/ {2,}/g, ' ');
+    text = text.replace(/\.{3,}/g, '...');
+    text = text.replace(/\.\.(?!\.)/g, '.');
+    text = text.replace(/ \./g, '.');
+    text = text.replace(/ ,/g, ',');
+    text = text.replace(/,,+/g, ',');
+    text = text.replace(/!{2,}/g, '!');
+    text = text.replace(/\?{2,}/g, '?');
+    // Capitalize after sentence-ending punctuation
+    text = text.replace(/([.!?])\s+([a-z])/g, function (_, p, ch) { return p + ' ' + ch.toUpperCase(); });
+    // Capitalize start of text
+    text = text.replace(/^\s*([a-z])/, function (_, ch) { return ch.toUpperCase(); });
     var lines = text.split('\n');
-    var inList = false;
-    var listItems = [];
-    var result = [];
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var isListItem = /^\s*(?:[-*•]|\d+[.)]\s)/.test(line);
-
-      if (isListItem) {
-        inList = true;
-        listItems.push(line);
-      } else {
-        if (inList && listItems.length > 0) {
-          // Flush the list — occasionally tweak
-          if (listItems.length > 3 && chance(40)) {
-            // Merge last two items
-            var last = listItems.pop();
-            var secondLast = listItems.pop();
-            var mergedContent = secondLast.replace(/^\s*(?:[-*•]|\d+[.)]\s)/, '').trim();
-            var lastContent = last.replace(/^\s*(?:[-*•]|\d+[.)]\s)/, '').trim();
-            var bulletMatch = secondLast.match(/^\s*(?:[-*•]|\d+[.)]\s)/);
-            var bullet = bulletMatch ? bulletMatch[0] : '- ';
-            listItems.push(bullet + mergedContent + ', and also ' + lastContent);
-          }
-          for (var j = 0; j < listItems.length; j++) {
-            result.push(listItems[j]);
-          }
-          listItems = [];
-          inList = false;
-        }
-        result.push(line);
-      }
-    }
-    // Flush remaining list items
-    for (var k = 0; k < listItems.length; k++) {
-      result.push(listItems[k]);
-    }
-
-    return result.join('\n');
+    var trimmed = [];
+    for (var i = 0; i < lines.length; i++) trimmed.push(lines[i].trim());
+    text = trimmed.join('\n');
+    // Capitalize after newlines
+    text = text.replace(/\n\s*([a-z])/g, function (_, ch) { return '\n' + ch.toUpperCase(); });
+    text = text.replace(/\n{3,}/g, '\n\n');
+    return text.trim();
   }
 
-  // ── Rule 7: Output format ───────────────────────────────────────────
-  // Return only rewritten text. No explanations, notes, or metadata.
+  /* ===================================================================
+   *  MAIN PIPELINE -- rewrite(text, options)
+   * =================================================================*/
 
-  // ── Main rewrite function ────────────────────────────────────────────
+  function rewrite(text, options) {
+    if (!text || text.trim().length === 0) return text || '';
 
-  function rewrite(input) {
-    if (!input || typeof input !== 'string' || input.trim().length === 0) {
-      return '';
+    var opts = options || {};
+    var ctx = opts.context || 'auto';
+    var level = opts.level || 'medium';
+
+    if (ctx === 'auto') ctx = detectTone(text);
+
+    var agg;
+    switch (level) {
+      case 'light': agg = 0.15; break;
+      case 'aggressive': agg = 0.70; break;
+      default: agg = 0.40;
     }
 
-    var text = input.trim();
-    var tone = detectTone(text);
+    // Stage 1: detect — skip only if zero AI patterns and not aggressive
     var aiScore = scoreAIness(text);
+    var patCount = countAIPatterns(text);
+    if (aiScore < SCORE_THRESHOLD_HUMAN && patCount === 0 && level !== 'aggressive') {
+      return applyContractions(text, 0.5);
+    }
+    // For low-score text with some patterns, still run pattern removal
+    // but skip restructuring and voice injection unless score is high
+    var skipVoice = (aiScore < SCORE_THRESHOLD_HUMAN && level === 'light');
 
-    // If the text already seems human-like, only lightly adjust
-    var isLight = aiScore < SCORE_THRESHOLD_HUMAN;
+    var paragraphs = text.split(/(\n\s*\n)/);
+    var outParagraphs = [];
 
-    // Step 1: Split into paragraphs
-    var paragraphs = splitParagraphs(text);
+    for (var pi = 0; pi < paragraphs.length; pi++) {
+      var para = paragraphs[pi];
 
-    // Process each paragraph
-    var processed = paragraphs.map(function (para) {
-      var p = para;
-
-      // Rule 2: Remove AI patterns
-      p = removeAIPatterns(p);
-
-      // Rule 3: Add contractions
-      p = addContractions(p);
-
-      // Rule 5: Tone-specific adjustments
-      if (tone === 'email') {
-        p = adjustForEmail(p);
-      } else if (tone === 'technical') {
-        p = adjustForTechnical(p);
-      } else {
-        p = adjustForCasual(p);
+      if (/^\s*$/.test(para)) {
+        outParagraphs.push(para);
+        continue;
       }
 
-      // Rule 1: Vary sentence structure
-      var sentences = splitSentences(p);
-      if (!isLight) {
-        sentences = varySentenceStructure(sentences);
+      // Stage 2: aggressive pattern removal
+      para = replacePatterns(para, GREETING_PHRASES);
+      para = replacePatterns(para, STRUCTURE_PHRASES);
+      para = replacePatterns(para, PASSIVE_PHRASES);
+      para = replacePatterns(para, POLITE_PHRASES);
+      para = replacePatterns(para, TRANSITION_PATTERNS);
+      para = replacePatterns(para, BUZZWORD_PATTERNS);
+
+      // Stage 3: sentence restructuring (skip for light or skipVoice)
+      var sentences = splitSentences(para);
+      if (level !== 'light' && !skipVoice) {
+        sentences = restructureSentences(sentences, agg);
       }
 
-      // Rule 3: Add conversational connectors (only if not light touch)
-      if (!isLight) {
-        sentences = addConversationalConnectors(sentences, tone);
+      // Stage 4: human voice injection (skip for light or skipVoice)
+      if (level !== 'light' && !skipVoice) {
+        sentences = injectHumanVoice(sentences, ctx, agg);
       }
 
-      return sentences.join(' ');
-    });
+      // Contractions
+      var cProb = level === 'light' ? 0.50 : (level === 'aggressive' ? 0.95 : 0.80);
+      para = sentences.join(' ');
+      para = applyContractions(para, cProb);
 
-    // Rule 6: Break paragraph symmetry
-    if (!isLight && processed.length > 2) {
-      processed = breakParagraphSymmetry(processed);
+      outParagraphs.push(para);
     }
 
-    var output = joinParagraphs(processed);
+    var out = outParagraphs.join('');
 
-    // Rule 6: Unbalance lists
-    output = unbalanceLists(output);
+    // Stage 5: context adjustments
+    out = contextAdjust(out, ctx);
 
-    // Clean up any double spaces
-    output = output.replace(/ {2,}/g, ' ');
+    // Stage 6: polish
+    out = polish(out);
 
-    // Clean up any weirdly placed punctuation
-    output = output.replace(/\s+([.,!?;:])/g, '$1');
-    output = output.replace(/([.!?])\s*\1+/g, '$1');
-
-    return output;
+    return out;
   }
 
-  // ── Exports ──────────────────────────────────────────────────────────
+  /* ===================================================================
+   *  PUBLIC API
+   * =================================================================*/
 
-  var Rewriter = {
+  return {
     rewrite: rewrite,
     detectTone: detectTone,
     scoreAIness: scoreAIness,
+    countAIPatterns: countAIPatterns,
     SCORE_THRESHOLD_HUMAN: SCORE_THRESHOLD_HUMAN,
     SCORE_THRESHOLD_AI: SCORE_THRESHOLD_AI
   };
-
-  // Node.js / CommonJS
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Rewriter;
-  }
-
-  // Browser global
-  if (typeof root !== 'undefined') {
-    root.Rewriter = Rewriter;
-  }
-
-})(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
+});
