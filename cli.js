@@ -39,8 +39,10 @@ function run(text) {
   if (showScore) {
     var tone = Rewriter.detectTone(text);
     var score = Rewriter.scoreAIness(text);
+    var label = score < Rewriter.SCORE_THRESHOLD_HUMAN ? '(likely human)' :
+                score < Rewriter.SCORE_THRESHOLD_AI ? '(moderate)' : '(likely AI)';
     console.error('Detected tone: ' + tone);
-    console.error('AI-ness score: ' + score + (score < 5 ? ' (likely human)' : score < 15 ? ' (moderate)' : ' (likely AI)'));
+    console.error('AI-ness score: ' + score + ' ' + label);
     console.error('---');
   }
 

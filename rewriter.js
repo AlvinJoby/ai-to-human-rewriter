@@ -6,6 +6,17 @@
 (function (root) {
   'use strict';
 
+  // ── Scoring thresholds ────────────────────────────────────────────────
+
+  var SCORE_THRESHOLD_HUMAN = 5;    // Below this = likely human-written
+  var SCORE_THRESHOLD_AI = 15;      // Above this = likely AI-generated
+
+  // AI-ness scoring parameters
+  var UNIFORM_VARIANCE_THRESHOLD = 4;     // Sentence-length variance below this → AI signal
+  var UNIFORM_VARIANCE_PENALTY = 5;       // Score penalty for uniform sentence length
+  var LONG_PARAGRAPH_WORDS = 80;          // Word count above this → AI signal
+  var LONG_PARAGRAPH_PENALTY = 3;         // Score penalty per long paragraph
+
   // ── Utility helpers ──────────────────────────────────────────────────
 
   function pick(arr) {
@@ -16,8 +27,17 @@
     return Math.random() * 100 < pct;
   }
 
+  var ABBREVIATIONS = [
+    'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'ave', 'blvd',
+    'dept', 'est', 'fig', 'govt', 'inc', 'corp', 'ltd', 'vs', 'vol',
+    'etc', 'approx', 'appt', 'assn', 'gen', 'gov', 'hon', 'sgt',
+    'e\\.g', 'i\\.e', 'no', 'ph\\.d', 'u\\.s', 'u\\.k'
+  ];
+  var ABBREV_REGEX = new RegExp(
+    '(?:^|\\s)(?:' + ABBREVIATIONS.join('|') + ')\\.$', 'i'
+  );
+
   function splitSentences(text) {
-    // Split on sentence-ending punctuation followed by whitespace or end
     var parts = [];
     var current = '';
     for (var i = 0; i < text.length; i++) {
@@ -25,9 +45,8 @@
       if ((text[i] === '.' || text[i] === '!' || text[i] === '?') &&
           (i + 1 >= text.length || /\s/.test(text[i + 1])) &&
           current.trim().length > 1) {
-        // Avoid splitting on abbreviations like "e.g." or "Dr."
-        var trimmed = current.trim();
-        if (trimmed.length < 5 && /^[A-Z][a-z]?\.$/.test(trimmed)) {
+        // Avoid splitting on common abbreviations
+        if (text[i] === '.' && ABBREV_REGEX.test(current.trim())) {
           continue;
         }
         parts.push(current.trim());
@@ -295,13 +314,13 @@
       var lengths = sentences.map(function (s) { return s.split(/\s+/).length; });
       var avg = lengths.reduce(function (a, b) { return a + b; }, 0) / lengths.length;
       var variance = lengths.reduce(function (sum, l) { return sum + Math.pow(l - avg, 2); }, 0) / lengths.length;
-      if (variance < 4) score += 5; // very uniform → likely AI
+      if (variance < UNIFORM_VARIANCE_THRESHOLD) score += UNIFORM_VARIANCE_PENALTY;
     }
 
     // Very long paragraphs with no line breaks
     var paras = splitParagraphs(text);
     for (var k = 0; k < paras.length; k++) {
-      if (paras[k].split(/\s+/).length > 80) score += 3;
+      if (paras[k].split(/\s+/).length > LONG_PARAGRAPH_WORDS) score += LONG_PARAGRAPH_PENALTY;
     }
 
     return score;
@@ -322,8 +341,8 @@
         var next = sentences[i + 1];
         var nextWords = next.split(/\s+/);
         if (nextWords.length < 10) {
-          // Remove the period from current, join with connector
-          var merged = s.replace(/\.\s*$/, '') + ' — ' +
+          var connector = pick([', and ', '; ', ', so ', ', plus ']);
+          var merged = s.replace(/\.\s*$/, '') + connector +
             next.charAt(0).toLowerCase() + next.slice(1);
           result.push(merged);
           i++; // skip next
@@ -552,8 +571,9 @@
             var secondLast = listItems.pop();
             var mergedContent = secondLast.replace(/^\s*(?:[-*•]|\d+[.)]\s)/, '').trim();
             var lastContent = last.replace(/^\s*(?:[-*•]|\d+[.)]\s)/, '').trim();
-            listItems.push(secondLast.match(/^\s*(?:[-*•]|\d+[.)]\s)/)[0] +
-              mergedContent + ', and also ' + lastContent);
+            var bulletMatch = secondLast.match(/^\s*(?:[-*•]|\d+[.)]\s)/);
+            var bullet = bulletMatch ? bulletMatch[0] : '- ';
+            listItems.push(bullet + mergedContent + ', and also ' + lastContent);
           }
           for (var j = 0; j < listItems.length; j++) {
             result.push(listItems[j]);
@@ -587,7 +607,7 @@
     var aiScore = scoreAIness(text);
 
     // If the text already seems human-like, only lightly adjust
-    var isLight = aiScore < 5;
+    var isLight = aiScore < SCORE_THRESHOLD_HUMAN;
 
     // Step 1: Split into paragraphs
     var paragraphs = splitParagraphs(text);
@@ -650,7 +670,9 @@
   var Rewriter = {
     rewrite: rewrite,
     detectTone: detectTone,
-    scoreAIness: scoreAIness
+    scoreAIness: scoreAIness,
+    SCORE_THRESHOLD_HUMAN: SCORE_THRESHOLD_HUMAN,
+    SCORE_THRESHOLD_AI: SCORE_THRESHOLD_AI
   };
 
   // Node.js / CommonJS

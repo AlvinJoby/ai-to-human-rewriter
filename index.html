@@ -286,7 +286,7 @@ footer {
   AI-to-Human Rewriter &bull; Runs entirely in your browser &bull; No data leaves your device
 </footer>
 
-<script src="rewriter.js"></script>
+<script src="rewriter.js" onerror="document.getElementById('output').textContent='Error: Could not load rewriter.js. Make sure it is in the same folder as index.html.'; document.getElementById('output').style.color='#dc2626';"></script>
 <script>
 (function () {
   'use strict';
@@ -316,7 +316,8 @@ footer {
     toneBadge.textContent = tone.charAt(0).toUpperCase() + tone.slice(1);
     toneBadge.classList.add('detected');
 
-    var scoreLabel = aiScore < 5 ? 'Likely human' : aiScore < 15 ? 'Moderate AI' : 'Likely AI';
+    var scoreLabel = aiScore < Rewriter.SCORE_THRESHOLD_HUMAN ? 'Likely human' :
+                    aiScore < Rewriter.SCORE_THRESHOLD_AI ? 'Moderate AI' : 'Likely AI';
     scoreBadge.textContent = 'AI Score: ' + aiScore + ' — ' + scoreLabel;
     scoreBadge.classList.add('detected');
 
