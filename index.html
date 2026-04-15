@@ -286,7 +286,7 @@ footer {
   AI-to-Human Rewriter &bull; Runs entirely in your browser &bull; No data leaves your device
 </footer>
 
-<script src="rewriter.js" onerror="document.getElementById('output').textContent='Error: Could not load rewriter.js. Make sure it is in the same folder as index.html.'; document.getElementById('output').style.color='#dc2626';"></script>
+<script src="rewriter.js"></script>
 <script>
 (function () {
   'use strict';
@@ -297,6 +297,13 @@ footer {
   var toneBadge = document.getElementById('toneBadge');
   var scoreBadge = document.getElementById('scoreBadge');
   var statsRow = document.getElementById('statsRow');
+
+  if (typeof Rewriter === 'undefined') {
+    outputEl.textContent = 'Error: Could not load rewriter.js. Make sure it is in the same folder as index.html.';
+    outputEl.style.color = '#dc2626';
+    document.getElementById('rewriteBtn').disabled = true;
+    return;
+  }
 
   window.doRewrite = function () {
     var text = inputEl.value.trim();

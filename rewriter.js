@@ -249,6 +249,22 @@
     [/\blet us\b/gi, "let's"]
   ];
 
+  // Pre-compiled regexes for AI transition replacement
+  var AI_TRANSITION_REGEXES = AI_TRANSITIONS.map(function (t) {
+    return new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[,]?\\s', 'gi');
+  });
+
+  // Pre-compiled regexes for AI filler replacement
+  var AI_FILLER_COMPILED = [];
+  for (var _k in AI_FILLER_REPLACEMENTS) {
+    if (AI_FILLER_REPLACEMENTS.hasOwnProperty(_k)) {
+      AI_FILLER_COMPILED.push({
+        regex: new RegExp('\\b' + _k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'),
+        replacement: AI_FILLER_REPLACEMENTS[_k]
+      });
+    }
+  }
+
   // ── Tone detection ───────────────────────────────────────────────────
 
   var EMAIL_SIGNALS = [
@@ -342,7 +358,7 @@
         var nextWords = next.split(/\s+/);
         if (nextWords.length < 10) {
           var connector = pick([', and ', '; ', ', so ', ', plus ']);
-          var merged = s.replace(/\.\s*$/, '') + connector +
+          var merged = s.replace(/[.]\s*$/, '') + connector +
             next.charAt(0).toLowerCase() + next.slice(1);
           result.push(merged);
           i++; // skip next
@@ -383,28 +399,27 @@
     var result = text;
 
     // Replace AI transition words at the start of sentences
-    for (var i = 0; i < AI_TRANSITIONS.length; i++) {
-      var transition = AI_TRANSITIONS[i];
-      var simpleRegex = new RegExp('\\b' + transition.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[,]?\\s', 'gi');
-      result = result.replace(simpleRegex, function () {
+    for (var i = 0; i < AI_TRANSITION_REGEXES.length; i++) {
+      var regex = AI_TRANSITION_REGEXES[i];
+      regex.lastIndex = 0;
+      result = result.replace(regex, function () {
         return pick(HUMAN_TRANSITIONS) + ', ';
       });
     }
 
     // Replace AI filler words
-    for (var key in AI_FILLER_REPLACEMENTS) {
-      if (AI_FILLER_REPLACEMENTS.hasOwnProperty(key)) {
-        var re = new RegExp('\\b' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
-        var replacement = AI_FILLER_REPLACEMENTS[key];
-        result = result.replace(re, function (match) {
-          if (!chance(75)) return match; // Don't replace every instance
-          // Preserve casing
-          if (match.charAt(0) === match.charAt(0).toUpperCase()) {
-            return replacement.charAt(0).toUpperCase() + replacement.slice(1);
-          }
-          return replacement;
-        });
-      }
+    for (var j = 0; j < AI_FILLER_COMPILED.length; j++) {
+      var entry = AI_FILLER_COMPILED[j];
+      var replacement = entry.replacement;
+      entry.regex.lastIndex = 0;
+      result = result.replace(entry.regex, function (match) {
+        if (!chance(75)) return match; // Don't replace every instance
+        // Preserve casing
+        if (match.charAt(0) === match.charAt(0).toUpperCase()) {
+          return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+        }
+        return replacement;
+      });
     }
 
     return result;

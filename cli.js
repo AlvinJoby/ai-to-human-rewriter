@@ -91,7 +91,8 @@ if (fileIdx !== -1 && args[fileIdx + 1]) {
     });
     // If stdin is a TTY and no data is piped, show help after a short timeout
     if (process.stdin.isTTY) {
-      console.error('Waiting for input on stdin... (Ctrl+D to finish, or use --help)');
+      var eofKey = process.platform === 'win32' ? 'Ctrl+Z then Enter' : 'Ctrl+D';
+      console.error('Waiting for input on stdin... (' + eofKey + ' to finish, or use --help)');
     }
   }
 }
