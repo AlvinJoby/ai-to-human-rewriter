@@ -662,7 +662,7 @@
 
       // Merge two short adjacent sentences
       if (words < 6 && i + 1 < sentences.length && wc(sentences[i + 1]) < 8 && chance(agg * 0.5)) {
-        var merged = s.replace(/[.!?]+$/, '') + ' — ' + lcFirst(sentences[i + 1].trim());
+        var merged = s.replace(/[.!?]+$/, '') + ', ' + lcFirst(sentences[i + 1].trim());
         result.push(merged);
         i++;
         continue;
@@ -730,7 +730,7 @@
     var questionRate = ctx === 'technical' ? 0.03 : (ctx === 'professional' ? 0.05 : 0.12);
     var pauseRate = 0.06;
     var personalRate = ctx === 'technical' ? 0.05 : 0.12;
-    var dashRate = 0.08;
+    var connectorRate = 0.08;
 
     // Scale by aggressiveness (normalize around medium=0.40)
     var scale = agg / 0.40;
@@ -738,7 +738,25 @@
     questionRate *= scale;
     pauseRate *= scale;
     personalRate *= scale;
-    dashRate *= scale;
+    connectorRate *= scale;
+
+    var starters = CONV_STARTERS;
+    var questions = CASUAL_QUESTIONS;
+    var touches = PERSONAL_TOUCHES;
+
+    if (ctx === 'technical') {
+      starters = ['In practice, ', 'Quick note, ', 'To keep it clear, ', 'One thing to flag, '];
+      questions = [' Make sense?', ' Sound good?', ' Does that track?'];
+      touches = ['from what we\'ve seen, ', 'in our tests, ', 'in most cases, '];
+    } else if (ctx === 'professional') {
+      starters = ['To be clear, ', 'Just to align, ', 'One key point, ', 'From a business side, '];
+      questions = [' Is that reasonable?', ' Does that align?', ' Fair point?'];
+      touches = ['in my view, ', 'from my side, ', 'based on what we\'ve seen, '];
+    } else if (ctx === 'email') {
+      starters = ['Quick note, ', 'Just a heads up, ', 'By the way, ', 'One more thing, '];
+      questions = [' Sound good?', ' Does that work for you?', ' Works for you?'];
+      touches = ['from my side, ', 'I think ', 'honestly, '];
+    }
 
     // Pattern to detect already-casual sentence starts
     var casualStartRe = /^(?:So|But|And|Also|Plus|Hey|Look|I mean|Honestly|Basically|Actually|Frankly|Heads up|Just|Hi|Hello|Good news|Great news|Quick|Turns out|Truth is|The thing is|Bottom line|TL;DR|Anyway|Cheers|Thanks)/i;
@@ -753,7 +771,7 @@
 
       // Conversational starters -- not on first sentence, need gap
       if (i > 0 && gap >= 2 && !alreadyCasual && !tooShort && chance(starterRate)) {
-        s = pick(CONV_STARTERS) + lcFirst(s);
+        s = pick(starters) + lcFirst(s);
         lastInjection = i;
       }
 
@@ -765,19 +783,19 @@
 
       // Casual question at end of declarative sentence
       if (gap >= 3 && !tooShort && chance(questionRate) && /\.$/.test(s)) {
-        s = s.replace(/\.$/, pick(CASUAL_QUESTIONS));
+        s = s.replace(/\.$/, pick(questions));
         lastInjection = i;
       }
 
       // Personal touches -- not in technical writing, not on casual/short
-      if (gap >= 3 && ctx !== 'technical' && !alreadyCasual && !tooShort && chance(personalRate) && /^[A-Z]/.test(s)) {
-        s = pick(PERSONAL_TOUCHES) + lcFirst(s);
+      if (gap >= 3 && !alreadyCasual && !tooShort && chance(personalRate) && /^[A-Z]/.test(s)) {
+        s = pick(touches) + lcFirst(s);
         lastInjection = i;
       }
 
-      // Em dash for variety -- swap one comma (only on longer sentences)
-      if (!tooShort && chance(dashRate) && s.indexOf(',') !== -1) {
-        s = s.replace(/,/, ' —');
+      // Connector variety without using dash punctuation
+      if (!tooShort && chance(connectorRate) && s.indexOf(',') !== -1) {
+        s = s.replace(/,/, ':');
       }
 
       result.push(s);
@@ -793,22 +811,33 @@
     if (ctx === 'email') {
       text = text.replace(/^(?:Dear\b[^.!?\n]*[.,;]?\s*\n?)/i, '');
       if (!/^(?:Hey|Hi|Hello|Yo|What's up)/i.test(text.trim())) {
-        text = pick(['Hey! ', 'Hi! ', 'Hey there — ']) + text.trim();
+        text = pick(['Hey! ', 'Hi! ', 'Hey there, ']) + text.trim();
       }
+      text = text.replace(/\bkindly\b/gi, 'please');
+      text = text.replace(/\bat your earliest convenience\b/gi, 'when you get a chance');
     }
     if (ctx === 'casual') {
       text = text.replace(/\bvery\b/gi, function () { return pick(['super', 'really', 'pretty']); });
       text = text.replace(/\bquite\b/gi, function () { return pick(['pretty', 'really']); });
       text = text.replace(/\bhowever\b/gi, function () { return pick(['but', 'though']); });
+      text = text.replace(/\btherefore\b/gi, 'so');
+      text = text.replace(/\bmoreover\b/gi, 'also');
     }
     if (ctx === 'technical') {
       text = text.replace(/\bprior to deployment\b/gi, 'before we push this live');
       text = text.replace(/\bprior to (?:the )?release\b/gi, 'before release');
       text = text.replace(/\bthoroughly tested\b/gi, function () { return pick(['well-tested', 'solidly tested']); });
       text = text.replace(/\bproperly documented\b/gi, function () { return pick(['well-documented', 'documented properly']); });
+      text = text.replace(/\bgotta\b/gi, 'need to');
+      text = text.replace(/\bsuper\b/gi, 'very');
+      text = text.replace(/\breal talk\b/gi, 'to be clear');
     }
     if (ctx === 'professional') {
       text = text.replace(/\bvery important\b/gi, function () { return pick(['really important', 'key']); });
+      text = text.replace(/\bgotta\b/gi, 'need to');
+      text = text.replace(/\bkinda\b/gi, 'somewhat');
+      text = text.replace(/\bsorta\b/gi, 'somewhat');
+      text = text.replace(/\breal talk\b/gi, 'to be direct');
     }
     return text;
   }
@@ -818,12 +847,17 @@
    * =================================================================*/
 
   function polish(text) {
+    // Replace AI-like dash punctuation with commas while preserving regular word hyphens
+    text = text.replace(/\s*[—–]+\s*/g, ', ');
+    text = text.replace(/\s-\s/g, ', ');
+    // Remove list-style bullets that often signal generated text structure
+    text = text.replace(/^\s*[-*•]\s+/gm, '');
     text = text.replace(/ {2,}/g, ' ');
     text = text.replace(/\.{3,}/g, '...');
     text = text.replace(/\.\.(?!\.)/g, '.');
+    text = text.replace(/\s+,/g, ',');
     text = text.replace(/ \./g, '.');
-    text = text.replace(/ ,/g, ',');
-    text = text.replace(/,,+/g, ',');
+    text = text.replace(/,+/g, ',');
     text = text.replace(/!{2,}/g, '!');
     text = text.replace(/\?{2,}/g, '?');
     // Capitalize after sentence-ending punctuation
@@ -837,6 +871,8 @@
     // Capitalize after newlines
     text = text.replace(/\n\s*([a-z])/g, function (_, ch) { return '\n' + ch.toUpperCase(); });
     text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.replace(/\s+([.!?,;:])/g, '$1');
+    text = text.replace(/([,:;])(?=[A-Za-z])/g, '$1 ');
     return text.trim();
   }
 

@@ -9,6 +9,7 @@
 
 :root {
   --bg: #0f1117;
+  --bg-accent: #1b2140;
   --bg-subtle: #161922;
   --card: #1c1f2e;
   --card-header: #1a1d2b;
@@ -35,7 +36,7 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  background: radial-gradient(circle at top, var(--bg-accent) 0%, var(--bg) 45%);
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
@@ -291,6 +292,7 @@ header p {
   overflow: hidden;
   box-shadow: var(--shadow);
   transition: border-color var(--transition);
+  min-height: 420px;
 }
 
 .panel:focus-within { border-color: var(--border-focus); }
@@ -499,7 +501,7 @@ footer span { color: var(--success); }
 
 <header>
   <h1><span>✦</span> AI-to-Human Text Rewriter</h1>
-  <p>Transform AI-generated content into natural, human-sounding writing</p>
+  <p>Transform AI text into natural writing that matches its context</p>
 </header>
 
 <div class="container">
@@ -509,9 +511,9 @@ footer span { color: var(--success); }
 
   <div class="toolbar">
     <div class="toolbar-group">
-      <button class="btn btn-primary" id="rewriteBtn">↻ Rewrite<span class="btn-kbd">Ctrl ↵</span></button>
-      <button class="btn btn-success" id="copyBtn" disabled>✎ Copy</button>
-      <button class="btn" id="clearBtn">✕ Clear</button>
+      <button class="btn btn-primary" id="rewriteBtn">Rewrite<span class="btn-kbd">Ctrl ↵</span></button>
+      <button class="btn btn-success" id="copyBtn" disabled>Copy</button>
+      <button class="btn" id="clearBtn">Clear</button>
     </div>
 
     <div class="toolbar-group">
@@ -542,7 +544,7 @@ footer span { color: var(--success); }
   <div class="panels">
     <div class="panel">
       <div class="panel-header">
-        <h2>Input — AI Text</h2>
+        <h2>Input: Source Text</h2>
         <span class="badge" id="toneBadge"></span>
       </div>
       <textarea id="input" placeholder="Paste your AI-generated text here…&#10;&#10;Press Ctrl+Enter to rewrite."></textarea>
@@ -550,7 +552,7 @@ footer span { color: var(--success); }
 
     <div class="panel">
       <div class="panel-header">
-        <h2>Output — Human Text</h2>
+        <h2>Output: Humanized Text</h2>
         <span class="badge" id="scoreBadge"></span>
       </div>
       <div class="output-area empty" id="output">Rewritten text will appear here…</div>
@@ -559,28 +561,28 @@ footer span { color: var(--success); }
 
   <div class="stats-bar" id="statsBar">
     <div class="stat-card">
-      <div class="stat-value" id="statWords">—</div>
+      <div class="stat-value" id="statWords">0</div>
       <div class="stat-label">Words</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statSentences">—</div>
+      <div class="stat-value" id="statSentences">0</div>
       <div class="stat-label">Sentences</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statPatterns">—</div>
-      <div class="stat-label">AI Patterns Found</div>
+      <div class="stat-value" id="statPatterns">0/0</div>
+      <div class="stat-label">Patterns (Before/After)</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statScore">—</div>
-      <div class="stat-label">AI Score</div>
+      <div class="stat-value" id="statScore">0/0</div>
+      <div class="stat-label">AI Score (Before/After)</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statContext">—</div>
+      <div class="stat-value" id="statContext">Auto</div>
       <div class="stat-label">Detected Context</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statChanged">—</div>
-      <div class="stat-label">Words Changed</div>
+      <div class="stat-value" id="statChanged">+0 pts</div>
+      <div class="stat-label">Rewrite Impact</div>
     </div>
   </div>
 </div>
@@ -588,7 +590,7 @@ footer span { color: var(--success); }
 <div class="toast" id="toast"></div>
 
 <footer>
-  <span>●</span> Runs entirely in your browser &bull; No data leaves your device
+  <span>●</span> Runs entirely in your browser • No data leaves your device
 </footer>
 
 <script src="rewriter.js"></script>
@@ -692,6 +694,9 @@ footer span { color: var(--success); }
       context: getContext(),
       level: getLevel()
     });
+    var outTone = Rewriter.detectTone(result);
+    var outScore = Rewriter.scoreAIness(result);
+    var outPatternCount = Rewriter.countAIPatterns(result);
 
     // Output
     outputEl.textContent = result;
@@ -706,21 +711,24 @@ footer span { color: var(--success); }
     setBadge(toneBadge, toneText, patternCount > 3 ? 'danger' : patternCount > 0 ? 'warning' : 'info');
 
     // Output badge — AI score
-    var variant = scoreVariant(aiScore);
-    setBadge(scoreBadge, 'Score ' + aiScore + ' — ' + scoreLabel(aiScore), variant);
+    var variant = scoreVariant(outScore);
+    setBadge(scoreBadge, 'Score ' + outScore + ': ' + scoreLabel(outScore), variant);
 
     // Stats
     var outWords = countWords(result);
     var inWords = countWords(text);
     var wordDiff = Math.abs(outWords - inWords);
-    var pctChanged = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
+    var wordCountShiftPercent = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
+    var scoreDelta = aiScore - outScore;
+    var scoreDeltaLabel = scoreDelta > 0 ? ('+' + scoreDelta + ' pts') :
+      (scoreDelta < 0 ? (scoreDelta + ' pts') : 'No change');
 
     document.getElementById('statWords').textContent = outWords;
     document.getElementById('statSentences').textContent = countSentences(result);
-    document.getElementById('statPatterns').textContent = patternCount;
-    document.getElementById('statScore').textContent = aiScore;
-    document.getElementById('statContext').textContent = ucFirst(tone);
-    document.getElementById('statChanged').textContent = '~' + pctChanged + '%';
+    document.getElementById('statPatterns').textContent = patternCount + '/' + outPatternCount;
+    document.getElementById('statScore').textContent = aiScore + '/' + outScore;
+    document.getElementById('statContext').textContent = ucFirst(outTone);
+    document.getElementById('statChanged').textContent = scoreDeltaLabel + ' (' + wordCountShiftPercent + '% word count shift)';
 
     statsBar.classList.add('visible');
   }
@@ -752,7 +760,7 @@ footer span { color: var(--success); }
       document.execCommand('copy');
       showToast('✓ Copied to clipboard');
     } catch (e) {
-      showToast('Copy failed — please select and copy manually.');
+      showToast('Copy failed. Please select and copy manually.');
     }
     document.body.removeChild(ta);
   }
