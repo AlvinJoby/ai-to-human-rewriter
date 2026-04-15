@@ -847,7 +847,7 @@
    * =================================================================*/
 
   function polish(text) {
-    // Remove AI-like dash punctuation while preserving regular word hyphens
+    // Replace AI-like dash punctuation with commas while preserving regular word hyphens
     text = text.replace(/\s*[—–]+\s*/g, ', ');
     text = text.replace(/\s-\s/g, ', ');
     // Remove list-style bullets that often signal generated text structure

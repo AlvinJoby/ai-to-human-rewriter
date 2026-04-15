@@ -9,6 +9,7 @@
 
 :root {
   --bg: #0f1117;
+  --bg-accent: #1b2140;
   --bg-subtle: #161922;
   --card: #1c1f2e;
   --card-header: #1a1d2b;
@@ -35,7 +36,7 @@
 
 body {
   font-family: var(--font);
-  background: radial-gradient(circle at top, #1b2140 0%, var(--bg) 45%);
+  background: radial-gradient(circle at top, var(--bg-accent) 0%, var(--bg) 45%);
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
@@ -581,7 +582,7 @@ footer span { color: var(--success); }
     </div>
     <div class="stat-card">
       <div class="stat-value" id="statChanged">+0 pts</div>
-      <div class="stat-label">Score Improvement</div>
+      <div class="stat-label">Rewrite Impact</div>
     </div>
   </div>
 </div>
