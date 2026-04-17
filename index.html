@@ -717,7 +717,7 @@ footer span { color: var(--success); }
   }
 
   function forceReflow(el) {
-    // Force layout so animation classes can restart immediately.
+    // Trigger layout recalculation so CSS animations restart when class names are re-added.
     void el.offsetWidth;
   }
 

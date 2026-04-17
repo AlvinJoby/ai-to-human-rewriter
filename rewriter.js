@@ -714,7 +714,7 @@
     return null;
   }
 
-  function injectIntentionalTypos(text, level, ctx) {
+  function simulateHumanTypos(text, level, ctx) {
     if (!text || level === 'light') return text;
 
     // Keep typo frequency intentionally low so readability stays high.
@@ -722,7 +722,7 @@
     if (ctx === 'technical' || ctx === 'professional') typoChance *= 0.5;
 
     var maxTypos = level === 'aggressive' ? 2 : 1;
-    // Intentional low-frequency typos to mimic natural human imperfections.
+    // Deliberate misspellings used at low frequency to mimic natural human imperfections.
     var typoMap = {
       'really': 'realy',
       'because': 'becuase',
@@ -1010,7 +1010,7 @@
     out = contextAdjust(out, ctx);
 
     // Stage 5.5: tiny human-like imperfections
-    out = injectIntentionalTypos(out, level, ctx);
+    out = simulateHumanTypos(out, level, ctx);
 
     // Stage 6: polish
     out = polish(out);
