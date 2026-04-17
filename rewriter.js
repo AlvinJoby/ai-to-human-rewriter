@@ -517,11 +517,22 @@
     for (i = 0; i < techTerms.length; i++) { if (lower.indexOf(techTerms[i]) !== -1) techScore++; }
     for (i = 0; i < proTerms.length; i++) { if (lower.indexOf(proTerms[i]) !== -1) proScore++; }
 
-    if (techScore >= 3) return 'technical';
-    if (emailScore >= 3) return 'email';
-    if (proScore >= 2) return 'professional';
-    if (emailScore >= 2) return 'email';
-    return 'casual';
+    var totalScore = emailScore + techScore + proScore;
+    if (totalScore === 0) return 'casual';
+
+    var topScore = emailScore;
+    var topTone = 'email';
+    if (techScore > topScore) {
+      topScore = techScore;
+      topTone = 'technical';
+    }
+    if (proScore > topScore) {
+      topScore = proScore;
+      topTone = 'professional';
+    }
+
+    var confidenceRatio = topScore / totalScore;
+    return confidenceRatio > 0.55 ? topTone : 'casual';
   }
 
   /* ===================================================================
@@ -617,8 +628,10 @@
       var rep = patterns[i][1];
       re.lastIndex = 0;
       if (typeof rep === 'function') {
+        re.lastIndex = 0;
         text = text.replace(re, rep);
       } else if (Array.isArray(rep)) {
+        re.lastIndex = 0;
         text = text.replace(re, function (matched) {
           var chosen = pick(rep);
           // Preserve case: if matched started lowercase, lowercase the replacement
@@ -628,6 +641,7 @@
           return chosen;
         });
       } else {
+        re.lastIndex = 0;
         text = text.replace(re, function (matched) {
           var r = rep;
           if (/^[a-z]/.test(matched) && /^[A-Z]/.test(r)) {
@@ -714,35 +728,90 @@
     return null;
   }
 
-  function simulateHumanTypos(text, level, ctx) {
+  function paragraphHumanize(text, level) {
+    if (!text) return text;
+
+    var starterRate = level === 'aggressive' ? 0.25 : (level === 'medium' ? 0.15 : 0);
+    var breakRate = level === 'aggressive' ? 0.35 : (level === 'medium' ? 0.2 : 0.08);
+    var asideRate = 0.08;
+    var asides = ['(which makes sense)', '(at least in my experience)', '(to be fair)', '(for what it\'s worth)'];
+    var sentences = splitSentences(text);
+    var i;
+
+    if (!sentences.length) return text;
+
+    for (i = 1; i < sentences.length; i++) {
+      if (/^(?:And|But)\b/i.test(sentences[i])) continue;
+      if (chance(starterRate)) sentences[i] = pick(['And ', 'But ']) + lcFirst(sentences[i]);
+    }
+
+    for (i = 0; i < sentences.length; i++) {
+      if (!chance(asideRate) || wc(sentences[i]) < 6 || /\([^)]*\)/.test(sentences[i])) continue;
+      var endPunct = /[.!?]$/.test(sentences[i]) ? sentences[i].slice(-1) : '.';
+      sentences[i] = sentences[i].replace(/[.!?]$/, '') + ' ' + pick(asides) + endPunct;
+    }
+
+    if (sentences.length > 4 && chance(breakRate)) {
+      var splitAt = Math.floor(Math.random() * (sentences.length - 2)) + 1;
+      return sentences.slice(0, splitAt).join(' ') +
+        '\n\n' + sentences[splitAt] +
+        '\n\n' + sentences.slice(splitAt + 1).join(' ');
+    }
+
+    return sentences.join(' ');
+  }
+
+  function applyHumanVariations(text, level, ctx) {
     if (!text || level === 'light') return text;
 
-    // Keep typo frequency intentionally low so readability stays high.
-    var typoChance = level === 'aggressive' ? 0.12 : 0.03;
-    if (ctx === 'technical' || ctx === 'professional') typoChance *= 0.5;
+    var sentences = splitSentences(text);
+    if (!sentences.length) return text;
 
-    var maxTypos = level === 'aggressive' ? 2 : 1;
-    // Deliberate misspellings used at low frequency to mimic natural human imperfections.
-    var typoMap = {
-      'really': 'realy',
-      'because': 'becuase',
-      'definitely': 'definately',
-      'separate': 'seperate',
-      'which': 'wich'
-    };
+    var spliceRate = level === 'aggressive' ? 0.14 : 0.08;
+    var hedgeRate = level === 'aggressive' ? 0.18 : 0.1;
+    var correctionRate = 0.05;
+    var hedges = ['I think ', 'kind of ', 'sort of '];
+    var out = [];
+    var i;
 
-    var applied = 0;
-    for (var key in typoMap) {
-      if (!typoMap.hasOwnProperty(key) || applied >= maxTypos) continue;
-      var re = new RegExp('\\b' + escRe(key) + '\\b', 'gi');
-      text = text.replace(re, function (matched) {
-        if (applied >= maxTypos || !chance(typoChance)) return matched;
-        applied++;
-        var replacement = typoMap[key];
-        return /^[A-Z]/.test(matched) ? ucFirst(replacement) : replacement;
-      });
+    if (ctx === 'technical' || ctx === 'professional') {
+      spliceRate *= 0.7;
+      hedgeRate *= 0.6;
+      correctionRate *= 0.7;
     }
-    return text;
+
+    for (i = 0; i < sentences.length; i++) {
+      var s = sentences[i].trim();
+      if (!s) continue;
+
+      if (chance(correctionRate) && !/^well, actually,/i.test(s)) {
+        s = 'Well, actually, ' + lcFirst(s);
+      }
+
+      if (chance(hedgeRate) && wc(s) > 5) {
+        if (/\bis\b/i.test(s) && chance(0.5)) {
+          s = s.replace(/\bis\b/i, 'is kind of');
+        } else if (/\bare\b/i.test(s) && chance(0.5)) {
+          s = s.replace(/\bare\b/i, 'are sort of');
+        } else if (!/^I think\b/i.test(s)) {
+          s = pick(hedges) + lcFirst(s);
+        }
+      }
+
+      if (i + 1 < sentences.length &&
+          /\.$/.test(s) &&
+          /\.$/.test(sentences[i + 1]) &&
+          wc(s) > 4 &&
+          wc(sentences[i + 1]) > 4 &&
+          chance(spliceRate)) {
+        s = s.replace(/\.$/, ', ') + lcFirst(sentences[i + 1]);
+        i++;
+      }
+
+      out.push(s);
+    }
+
+    return out.join(' ');
   }
 
   /* ===================================================================
@@ -888,28 +957,7 @@
    * =================================================================*/
 
   function polish(text) {
-    // Replace AI-like dash punctuation and then remove dash symbols entirely.
-    text = text.replace(/\s*[—–]+\s*/g, ', ');
-    text = text.replace(/\s-\s/g, ', ');
-    text = text.replace(/\blet[’']s\b/gi, 'let us');
-    text = text.replace(/\bit[’']s\b/gi, 'it is');
-    text = text.replace(/\bthat[’']s\b/gi, 'that is');
-    text = text.replace(/\bwhat[’']s\b/gi, 'what is');
-    text = text.replace(/\bwho[’']s\b/gi, 'who is');
-    text = text.replace(/\bthere[’']s\b/gi, 'there is');
-    text = text.replace(/\bhere[’']s\b/gi, 'here is');
-    text = text.replace(/\bwon[’']t\b/gi, 'will not');
-    text = text.replace(/\bcan[’']t\b/gi, 'cannot');
-    text = text.replace(/\b([A-Za-z]+)n[’']t\b/gi, '$1 not');
-    text = text.replace(/\b([A-Za-z]+)[’']re\b/gi, '$1 are');
-    text = text.replace(/\b([A-Za-z]+)[’']ve\b/gi, '$1 have');
-    text = text.replace(/\b([A-Za-z]+)[’']ll\b/gi, '$1 will');
-    text = text.replace(/\b([A-Za-z]+)[’']d\b/gi, '$1 would');
-    text = text.replace(/\b([A-Za-z]+)[’']m\b/gi, '$1 am');
-    text = text.replace(/\b(he|she|it|that|what|who|where|when|why|how|there|here)[’']s\b/gi, '$1 is');
-    text = text.replace(/\b([A-Za-z]+)[’']s\b/gi, '$1 s');
-    text = text.replace(/-/g, ' ');
-    text = text.replace(/[’']/g, '');
+    text = text.replace(/\s*[—–-]{2,}\s*/g, ' — ');
     // Remove list-style bullets that often signal generated text structure
     text = text.replace(/^\s*[-*•]\s+/gm, '');
     text = text.replace(/ {2,}/g, ' ');
@@ -999,6 +1047,7 @@
       // Contractions
       var cProb = level === 'light' ? 0.50 : (level === 'aggressive' ? 0.95 : 0.80);
       para = sentences.join(' ');
+      para = paragraphHumanize(para, level);
       para = applyContractions(para, cProb);
 
       outParagraphs.push(para);
@@ -1009,8 +1058,8 @@
     // Stage 5: context adjustments
     out = contextAdjust(out, ctx);
 
-    // Stage 5.5: tiny human-like imperfections
-    out = simulateHumanTypos(out, level, ctx);
+    // Stage 5.5: authentic human variation
+    out = applyHumanVariations(out, level, ctx);
 
     // Stage 6: polish
     out = polish(out);

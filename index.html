@@ -387,9 +387,9 @@ textarea::placeholder { color: var(--muted); }
 
 .output-area.reveal { animation: outputReveal 0.45s ease; }
 
-.output-area mark {
-  background: rgba(248, 113, 113, 0.2);
-  color: var(--danger);
+.output-area .diff-changed {
+  background: rgba(52, 211, 153, 0.18);
+  color: #9adbbf;
   border-radius: 3px;
   padding: 0.05em 0.2em;
 }
@@ -627,8 +627,8 @@ footer span { color: var(--success); }
       <div class="stat-label">Detected Context</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" id="statChanged">+0 pts</div>
-      <div class="stat-label">Rewrite Impact</div>
+      <div class="stat-value" id="statChanged">0</div>
+      <div class="stat-label">Changed Words</div>
     </div>
   </div>
 </div>
@@ -694,6 +694,38 @@ footer span { color: var(--success); }
   }
 
   function ucFirst(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function diffWords(input, output) {
+    var inWords = input.split(' ');
+    var outWords = output.split(' ');
+    var html = [];
+    var changed = 0;
+    var i;
+
+    for (i = 0; i < outWords.length; i++) {
+      var token = outWords[i];
+      var safe = escHtml(token);
+      if (inWords[i] !== token) {
+        changed++;
+        html.push('<span class="diff-changed">' + safe + '</span>');
+      } else {
+        html.push(safe);
+      }
+    }
+
+    return {
+      html: html.join(' '),
+      changed: changed
+    };
+  }
 
   function getLevel() { return levelNames[parseInt(levelSlider.value, 10)] || 'medium'; }
 
@@ -768,8 +800,9 @@ footer span { color: var(--success); }
     var outScore = Rewriter.scoreAIness(result);
     var outPatternCount = Rewriter.countAIPatterns(result);
 
-    // Output
-    outputEl.textContent = result;
+    // Output (diff-highlighted)
+    var diff = diffWords(text, result);
+    outputEl.innerHTML = diff.html;
     outputEl.classList.remove('empty');
     copyBtn.disabled = false;
     triggerRewriteAnimations();
@@ -790,16 +823,12 @@ footer span { color: var(--success); }
     var inWords = countWords(text);
     var wordDiff = Math.abs(outWords - inWords);
     var wordCountShiftPercent = inWords > 0 ? Math.round((wordDiff / inWords) * 100) : 0;
-    var scoreDelta = aiScore - outScore;
-    var scoreDeltaLabel = scoreDelta > 0 ? ('+' + scoreDelta + ' pts') :
-      (scoreDelta < 0 ? (scoreDelta + ' pts') : 'No change');
-
     document.getElementById('statWords').textContent = outWords;
     document.getElementById('statSentences').textContent = countSentences(result);
     document.getElementById('statPatterns').textContent = patternCount + '/' + outPatternCount;
     document.getElementById('statScore').textContent = aiScore + '/' + outScore;
     document.getElementById('statContext').textContent = ucFirst(outTone);
-    document.getElementById('statChanged').textContent = scoreDeltaLabel + ' (' + wordCountShiftPercent + '% word count shift)';
+    document.getElementById('statChanged').textContent = diff.changed + ' (' + wordCountShiftPercent + '% shift)';
 
     statsBar.classList.add('visible');
   }
