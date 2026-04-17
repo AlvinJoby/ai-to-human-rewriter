@@ -646,13 +646,14 @@
 
   function restructureSentences(sentences, agg) {
     var result = [];
+    var splitThreshold = agg >= 0.65 ? 18 : (agg >= 0.4 ? 22 : 28);
     for (var i = 0; i < sentences.length; i++) {
       var s = sentences[i].trim();
       if (!s) continue;
       var words = wc(s);
 
       // Split very long sentences at natural break points
-      if (words > 28 && chance(agg)) {
+      if (words > splitThreshold && chance(Math.min(0.95, agg + 0.2))) {
         var splitRes = trySplit(s);
         if (splitRes) {
           for (var k = 0; k < splitRes.length; k++) result.push(splitRes[k]);
@@ -660,8 +661,17 @@
         }
       }
 
+      // Split medium-length dense sentences
+      if (words > 16 && /,\s*(?:and|but|because|which|while|so)\s+/i.test(s) && chance(agg * 0.55)) {
+        var mediumSentenceSplit = trySplit(s);
+        if (mediumSentenceSplit) {
+          for (var x = 0; x < mediumSentenceSplit.length; x++) result.push(mediumSentenceSplit[x]);
+          continue;
+        }
+      }
+
       // Merge two short adjacent sentences
-      if (words < 6 && i + 1 < sentences.length && wc(sentences[i + 1]) < 8 && chance(agg * 0.5)) {
+      if (words < 7 && i + 1 < sentences.length && wc(sentences[i + 1]) < 9 && chance(Math.max(0.2, agg * 0.5))) {
         var merged = s.replace(/[.!?]+$/, '') + ', ' + lcFirst(sentences[i + 1].trim());
         result.push(merged);
         i++;
@@ -702,6 +712,37 @@
       }
     }
     return null;
+  }
+
+  function injectIntentionalTypos(text, level, ctx) {
+    if (!text || level === 'light') return text;
+
+    // Keep typo frequency intentionally low so readability stays high.
+    var typoChance = level === 'aggressive' ? 0.12 : 0.03;
+    if (ctx === 'technical' || ctx === 'professional') typoChance *= 0.5;
+
+    var maxTypos = level === 'aggressive' ? 2 : 1;
+    // Intentional low-frequency typos to mimic natural human imperfections.
+    var typoMap = {
+      'really': 'realy',
+      'because': 'becuase',
+      'definitely': 'definately',
+      'separate': 'seperate',
+      'which': 'wich'
+    };
+
+    var applied = 0;
+    for (var key in typoMap) {
+      if (!typoMap.hasOwnProperty(key) || applied >= maxTypos) continue;
+      var re = new RegExp('\\b' + escRe(key) + '\\b', 'gi');
+      text = text.replace(re, function (matched) {
+        if (applied >= maxTypos || !chance(typoChance)) return matched;
+        applied++;
+        var replacement = typoMap[key];
+        return /^[A-Z]/.test(matched) ? ucFirst(replacement) : replacement;
+      });
+    }
+    return text;
   }
 
   /* ===================================================================
@@ -847,9 +888,28 @@
    * =================================================================*/
 
   function polish(text) {
-    // Replace AI-like dash punctuation with commas while preserving regular word hyphens
+    // Replace AI-like dash punctuation and then remove dash symbols entirely.
     text = text.replace(/\s*[—–]+\s*/g, ', ');
     text = text.replace(/\s-\s/g, ', ');
+    text = text.replace(/\blet[’']s\b/gi, 'let us');
+    text = text.replace(/\bit[’']s\b/gi, 'it is');
+    text = text.replace(/\bthat[’']s\b/gi, 'that is');
+    text = text.replace(/\bwhat[’']s\b/gi, 'what is');
+    text = text.replace(/\bwho[’']s\b/gi, 'who is');
+    text = text.replace(/\bthere[’']s\b/gi, 'there is');
+    text = text.replace(/\bhere[’']s\b/gi, 'here is');
+    text = text.replace(/\bwon[’']t\b/gi, 'will not');
+    text = text.replace(/\bcan[’']t\b/gi, 'cannot');
+    text = text.replace(/\b([A-Za-z]+)n[’']t\b/gi, '$1 not');
+    text = text.replace(/\b([A-Za-z]+)[’']re\b/gi, '$1 are');
+    text = text.replace(/\b([A-Za-z]+)[’']ve\b/gi, '$1 have');
+    text = text.replace(/\b([A-Za-z]+)[’']ll\b/gi, '$1 will');
+    text = text.replace(/\b([A-Za-z]+)[’']d\b/gi, '$1 would');
+    text = text.replace(/\b([A-Za-z]+)[’']m\b/gi, '$1 am');
+    text = text.replace(/\b(he|she|it|that|what|who|where|when|why|how|there|here)[’']s\b/gi, '$1 is');
+    text = text.replace(/\b([A-Za-z]+)[’']s\b/gi, '$1 s');
+    text = text.replace(/-/g, ' ');
+    text = text.replace(/[’']/g, '');
     // Remove list-style bullets that often signal generated text structure
     text = text.replace(/^\s*[-*•]\s+/gm, '');
     text = text.replace(/ {2,}/g, ' ');
@@ -948,6 +1008,9 @@
 
     // Stage 5: context adjustments
     out = contextAdjust(out, ctx);
+
+    // Stage 5.5: tiny human-like imperfections
+    out = injectIntentionalTypos(out, level, ctx);
 
     // Stage 6: polish
     out = polish(out);
