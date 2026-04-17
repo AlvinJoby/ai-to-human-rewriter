@@ -37,6 +37,8 @@
 body {
   font-family: var(--font);
   background: radial-gradient(circle at top, var(--bg-accent) 0%, var(--bg) 45%);
+  background-size: 160% 160%;
+  animation: bgFlow 18s ease infinite;
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
@@ -291,11 +293,13 @@ header p {
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow);
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), transform 0.3s ease, box-shadow 0.3s ease;
   min-height: 420px;
 }
 
-.panel:focus-within { border-color: var(--border-focus); }
+.panel:focus-within { border-color: var(--border-focus); transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.panel:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.panel.rewrite-flash { animation: panelPulse 0.55s ease; }
 
 .panel-header {
   display: flex;
@@ -381,6 +385,8 @@ textarea::placeholder { color: var(--muted); }
   font-style: italic;
 }
 
+.output-area.reveal { animation: outputReveal 0.45s ease; }
+
 .output-area mark {
   background: rgba(248, 113, 113, 0.2);
   color: var(--danger);
@@ -413,6 +419,16 @@ textarea::placeholder { color: var(--muted); }
   padding: 0.7rem 0.5rem;
   text-align: center;
 }
+
+.stats-bar.visible .stat-card {
+  animation: statPop 0.38s ease both;
+}
+
+.stats-bar.visible .stat-card:nth-child(2) { animation-delay: 0.04s; }
+.stats-bar.visible .stat-card:nth-child(3) { animation-delay: 0.08s; }
+.stats-bar.visible .stat-card:nth-child(4) { animation-delay: 0.12s; }
+.stats-bar.visible .stat-card:nth-child(5) { animation-delay: 0.16s; }
+.stats-bar.visible .stat-card:nth-child(6) { animation-delay: 0.2s; }
 
 .stat-value {
   font-size: 1.2rem;
@@ -456,6 +472,8 @@ textarea::placeholder { color: var(--muted); }
   opacity: 1;
 }
 
+.btn-primary.is-running { animation: buttonPulse 0.65s ease; }
+
 /* Footer */
 footer {
   text-align: center;
@@ -481,6 +499,34 @@ footer span { color: var(--success); }
 }
 
 .error-banner.visible { display: block; }
+
+@keyframes bgFlow {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 40%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes panelPulse {
+  0% { transform: translateY(0); box-shadow: var(--shadow); }
+  50% { transform: translateY(-4px); box-shadow: 0 0 0 1px var(--primary), var(--shadow-lg); }
+  100% { transform: translateY(0); box-shadow: var(--shadow); }
+}
+
+@keyframes outputReveal {
+  0% { opacity: 0.3; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes statPop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes buttonPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
 
 /* Responsive */
 @media (max-width: 860px) {
@@ -610,6 +656,7 @@ footer span { color: var(--success); }
   var scoreBadge    = document.getElementById('scoreBadge');
   var statsBar      = document.getElementById('statsBar');
   var errorBanner   = document.getElementById('errorBanner');
+  var panelEls      = document.querySelectorAll('.panel');
 
   var sliderLabels = [
     document.getElementById('labelLight'),
@@ -617,6 +664,7 @@ footer span { color: var(--success); }
     document.getElementById('labelAggressive')
   ];
   var levelNames = ['light', 'medium', 'aggressive'];
+  var REWRITE_ANIMATION_MS = 650;
 
   /* ── Rewriter availability check ────────────────────── */
   if (typeof Rewriter === 'undefined') {
@@ -668,6 +716,28 @@ footer span { color: var(--success); }
     return 'Likely AI';
   }
 
+  function forceReflow(el) {
+    // Trigger layout recalculation so CSS animations restart when class names are re-added.
+    void el.offsetWidth;
+  }
+
+  function triggerRewriteAnimations() {
+    rewriteBtn.classList.add('is-running');
+    for (var i = 0; i < panelEls.length; i++) {
+      panelEls[i].classList.remove('rewrite-flash');
+      forceReflow(panelEls[i]);
+      panelEls[i].classList.add('rewrite-flash');
+    }
+    outputEl.classList.remove('reveal');
+    forceReflow(outputEl);
+    outputEl.classList.add('reveal');
+    setTimeout(function () {
+      rewriteBtn.classList.remove('is-running');
+      for (var j = 0; j < panelEls.length; j++) panelEls[j].classList.remove('rewrite-flash');
+      outputEl.classList.remove('reveal');
+    }, REWRITE_ANIMATION_MS);
+  }
+
   /* ── Slider labels ──────────────────────────────────── */
   function updateSliderLabels() {
     var idx = parseInt(levelSlider.value, 10);
@@ -702,6 +772,7 @@ footer span { color: var(--success); }
     outputEl.textContent = result;
     outputEl.classList.remove('empty');
     copyBtn.disabled = false;
+    triggerRewriteAnimations();
 
     // Input badge — tone + pattern count
     var toneText = ucFirst(tone);
