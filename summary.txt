@@ -1,0 +1,24 @@
+AI-to-Human Text Rewriter - Project Summary
+
+This project is an offline JavaScript tool that rewrites AI-generated text to sound more natural and human. It runs fully on-device (no API calls or external services) and works in both browser and Node.js environments.
+
+Core capabilities:
+- Detects how AI-like input text is using phrase patterns, tone signals, and sentence-structure heuristics.
+- Rewrites text through a multi-stage pipeline: pattern replacement, sentence restructuring, voice/contraction injection, context-based adjustments, and final cleanup.
+- Supports multiple contexts (auto, email, technical, casual, professional) and rewrite intensities (light, medium, aggressive).
+
+Project structure:
+- rewriter.js: Main rewriting engine (UMD-style module usable in Node and browser).
+- cli.js: Command-line interface with argument parsing, file/stdin input, context/level flags, and optional AI score reporting.
+- index.html: Standalone web UI for side-by-side input/output rewriting and quick interaction.
+- README.md: Usage guide, examples, feature descriptions, and technical notes.
+
+How it is used:
+- Browser: Open index.html directly and rewrite text interactively.
+- CLI: Run node cli.js with direct text, --file input, or piped stdin; optional flags adjust context/level and show scoring.
+
+Technical profile:
+- Pure ES5 JavaScript
+- Zero npm dependencies
+- No build step required
+- Fully local/offline processing
