@@ -104,7 +104,10 @@
     [/\bIn terms of\b/gi, ['for']],
     [/\bPrior to\b/gi, ['before']],
     [/\bSubsequent to\b/gi, ['after']],
-    [/\bKindly\b/gi, ['Please']]
+    [/\bKindly\b/gi, ['Please']],
+    [/\bHowever[.,;]?\s*/gi, ['But ', 'Still, ', 'That said, ', '']],
+    [/\bAlthough\b/gi, ['While', 'Even though']],
+    [/\bIn addition[.,;]?\s*/gi, ['Also, ', 'Plus, ', '']]
   ];
 
   var BUZZWORD_PATTERNS = [
@@ -279,6 +282,121 @@
     return ensureEnd(sa + ' and ' + sb);
   }
 
+  // ── Human-pattern helpers ──────────────────────────────────────────────────
+
+  var PIVOT_STARTERS = [
+    'Actually, ', 'Essentially, ', 'In practice, ',
+    'More specifically, ', 'Realistically, ', 'Honestly, '
+  ];
+
+  function hasPivotAlready(s) {
+    return /[—–]|\bactually\b|\bessentially\b|\bin (?:most cases|practice)\b|\bto be fair\b/i.test(s);
+  }
+
+  // Inject a thought-flow pivot at the sentence start for strictly linear sentences.
+  function injectThoughtPivot(s) {
+    if (hasPivotAlready(s)) return s;
+    if (wc(s) < 7) return s;
+    var stripped = s.replace(CONNECTOR_PREFIX, '').trim();
+    if (!stripped) return s;
+    if (/^(?:actually|essentially|basically|realistically|in practice|more specifically|worth noting)/i.test(stripped)) return s;
+    var pivot = pick(PIVOT_STARTERS);
+    return ensureEnd(pivot + lcFirst(stripped));
+  }
+
+  // Add an em-dash variation to a longer sentence that has uniform punctuation.
+  function addDashPivot(s) {
+    if (wc(s) < 11) return s;
+    if (/—/.test(s)) return s;
+    var endMatch = s.match(/([.!?]+)$/);
+    var punct = endMatch ? endMatch[1] : '.';
+    var clean = s.replace(/[.!?]+$/, '');
+    // Convert ", and <short tail>" into " — and <tail>"
+    var m = clean.match(/^(.*),\s+and\s+(.+)$/i);
+    if (m && wc(m[1]) >= 5 && wc(m[2]) >= 2) {
+      return m[1] + ' — and ' + m[2] + punct;
+    }
+    // Convert a last-comma clause (2–7 words) into an em-dash clause
+    var lastComma = clean.lastIndexOf(',');
+    if (lastComma > Math.floor(clean.length * 0.55) && lastComma < clean.length - 8) {
+      var before = clean.slice(0, lastComma);
+      var after = clean.slice(lastComma + 1).trim();
+      if (wc(after) >= 2 && wc(after) <= 7) {
+        return before + ' — ' + after + punct;
+      }
+    }
+    return s;
+  }
+
+  // Split a sentence at a conjunction to break a clean, linear structure.
+  // Returns [partA, partB] or null if no suitable split found.
+  function splitOnConjunctions(s) {
+    var clean = s.replace(/[.!?]+$/, '').trim();
+    var conjPatterns = [
+      /,\s+and\s+(?=[a-z])/i,
+      /,\s+but\s+(?=[a-z])/i,
+      /,\s+while\s+(?=[a-z])/i,
+      /\s+which\s+(?=[a-z])/i,
+      /,\s+because\s+(?=[a-z])/i
+    ];
+    var i;
+    for (i = 0; i < conjPatterns.length; i++) {
+      var idx = clean.search(conjPatterns[i]);
+      if (idx < 8 || idx > clean.length - 10) continue;
+      var match = clean.match(conjPatterns[i]);
+      if (!match) continue;
+      var a = clean.slice(0, idx).trim();
+      var b = clean.slice(idx + match[0].length).trim();
+      if (wc(a) < 4 || wc(b) < 3) continue;
+      return [ensureEnd(a), ensureEnd(ucFirst(b))];
+    }
+    return null;
+  }
+
+  // At paragraph level, expand suitable conjunction sentences into two shorter ones.
+  function expandConjunctions(sentences, strength) {
+    var out = [];
+    var i;
+    for (i = 0; i < sentences.length; i++) {
+      var s = sentences[i];
+      if (wc(s) > 13 && chance(0.30 * strength)) {
+        var parts = splitOnConjunctions(s);
+        if (parts) {
+          out.push(parts[0]);
+          out.push(parts[1]);
+          continue;
+        }
+      }
+      out.push(s);
+    }
+    return out;
+  }
+
+  // Detect runs of three or more similarly-lengthed sentences and force variation
+  // by splitting the middle one.
+  function varyLengthRun(sentences, strength) {
+    if (sentences.length < 3) return sentences;
+    var out = sentences.slice();
+    var i;
+    for (i = 1; i < out.length - 1; i++) {
+      var prevW = wc(out[i - 1]);
+      var curW = wc(out[i]);
+      var nxtW = wc(out[i + 1]);
+      if (prevW > 9 && curW > 9 && nxtW > 9 &&
+          Math.abs(prevW - curW) <= 5 && Math.abs(curW - nxtW) <= 5 &&
+          chance(0.45 * strength)) {
+        var parts = splitLongSentence(out[i]);
+        if (parts.length > 1) {
+          out.splice(i, 1, parts[0], parts[1]);
+          i++;
+        }
+      }
+    }
+    return out;
+  }
+
+  // ── End human-pattern helpers ──────────────────────────────────────────────
+
   function contextWordPass(text, context) {
     var out = text;
 
@@ -335,7 +453,7 @@
       if (!s) continue;
       s = ensureEnd(s);
 
-      if (wc(s) > (strength > 0.75 ? 17 : 24)) {
+      if (wc(s) > (strength > 0.75 ? 14 : (strength > 0.5 ? 18 : 24))) {
         var split = splitLongSentence(s);
         var j;
         for (j = 0; j < split.length; j++) base.push(ensureEnd(split[j]));
@@ -360,8 +478,25 @@
       var curWords = wc(cur);
       var nextWords = wc(next);
 
+      // Repetition rule: two sentences that start with the same first word
+      // (common structural words) → break the repetition on the second sentence.
+      var REPETITIVE_STARTERS = ['the', 'this', 'these', 'it', 'they', 'there', 'that'];
+      var curFirst = cur.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+      var nxtFirst = next.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+      var sameFirst = curFirst === nxtFirst && REPETITIVE_STARTERS.indexOf(curFirst) !== -1;
+
       if (curLead && nextLead && curLead === nextLead && (strength >= 0.6 || chance(0.55 * strength))) {
         shaped.push(mergeSentencePair(cur, next));
+        i++;
+      } else if (sameFirst && strength >= 0.65 && chance(0.5)) {
+        // Break the repeated start by injecting a pivot on the second sentence.
+        var dedup = pick(['Also — ', 'And ', 'Plus — ', '']);
+        shaped.push(cur);
+        if (dedup) {
+          shaped.push(ensureEnd(ucFirst(dedup) + lcFirst(next)));
+        } else {
+          shaped.push(next);
+        }
         i++;
       } else if (curWords < 8 && nextWords < 12 && chance(0.20 * strength)) {
         shaped.push(mergeSentencePair(cur, next));
@@ -384,6 +519,16 @@
     s = normalizeSentenceLead(s);
     s = flipBecauseClause(s);
     s = ensureEnd(s);
+
+    // Thought Flow rule: inject a human-like pivot into strictly linear sentences.
+    if (strength >= 0.5 && chance(0.30 * strength)) {
+      s = injectThoughtPivot(s);
+    }
+
+    // Punctuation variation rule: introduce em-dash variation in longer, uniform sentences.
+    if (strength >= 0.65 && wc(s) >= 11 && chance(0.25)) {
+      s = addDashPivot(s);
+    }
 
     // Force a light structural touch in medium/aggressive when sentence stayed almost unchanged.
     if (strength >= 0.5 && wc(s) > 10 && chance(0.35)) {
@@ -408,7 +553,17 @@
       if (rewritten) transformed.push(rewritten);
     }
 
+    // Structure rule: expand conjunction sentences (and/but/which/because) for rhythm variation.
+    if (strength >= 0.5) {
+      transformed = expandConjunctions(transformed, strength);
+    }
+
     transformed = rebuildCadence(transformed, strength);
+
+    // Sentence Length rule: vary similar-length sentence runs after cadence rebuild.
+    if (strength >= 0.5) {
+      transformed = varyLengthRun(transformed, strength);
+    }
 
     var out = transformed.join(' ');
 
