@@ -479,7 +479,7 @@
       var nextWords = wc(next);
 
       // Repetition rule: two sentences that start with the same first word
-      // (common structural words) → break the repetition on the second sentence.
+      // (common structural words) -- break the repetition on the second sentence.
       var REPETITIVE_STARTERS = ['the', 'this', 'these', 'it', 'they', 'there', 'that'];
       var curFirst = cur.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
       var nxtFirst = next.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
@@ -490,13 +490,9 @@
         i++;
       } else if (sameFirst && strength >= 0.65 && chance(0.5)) {
         // Break the repeated start by injecting a pivot on the second sentence.
-        var dedup = pick(['Also — ', 'And ', 'Plus — ', '']);
+        var dedup = pick(['Also — ', 'And ', 'Plus — ']);
         shaped.push(cur);
-        if (dedup) {
-          shaped.push(ensureEnd(ucFirst(dedup) + lcFirst(next)));
-        } else {
-          shaped.push(next);
-        }
+        shaped.push(ensureEnd(ucFirst(dedup) + lcFirst(next)));
         i++;
       } else if (curWords < 8 && nextWords < 12 && chance(0.20 * strength)) {
         shaped.push(mergeSentencePair(cur, next));
@@ -526,7 +522,7 @@
     }
 
     // Punctuation variation rule: introduce em-dash variation in longer, uniform sentences.
-    if (strength >= 0.65 && wc(s) >= 11 && chance(0.25)) {
+    if (strength >= 0.65 && wc(s) >= 11 && chance(0.25 * strength)) {
       s = addDashPivot(s);
     }
 
